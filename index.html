@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f5f7fa"><title>Desktop Rider · 桌面设计室</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23457bdf%27/%3E%3Cpath d=%27M20 4L12 28%27 stroke=%27white%27 stroke-width=%273%27/%3E%3C/svg%3E"><link rel="stylesheet" href="styles.css"></head>
+<body>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><path d="M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h3M17 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-6M15 2 9 22"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 9h18"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 4v16m-6-6 6 6 6-6"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-screen" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+<symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 13A9 9 0 0 1 11 3a9 9 0 1 0 10 10Z"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7l-5-5Zm0 0v6h5M8 12h8M8 16h6"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></symbol>
+<symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-3v13M9 8l12-3"/><ellipse cx="5" cy="18" rx="4" ry="3"/><ellipse cx="17" cy="15" rx="4" ry="3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/></symbol>
+</defs></svg>
+<div class="app-shell">
+<aside class="sidebar">
+<a class="brand" href="#" aria-label="Desktop Rider 首页"><span class="brand-mark"><i></i><i></i></span><span>Desktop<span class="brand-light">Rider</span></span></a>
+<div class="workspace-label">你的桌面设计室 <span>Beta</span></div>
+<nav aria-label="主导航">
+<button class="nav-item active" data-view="design"><svg><use href="#i-split"/></svg>桌面设计<span class="nav-dot"></span></button>
+<button class="nav-item" data-view="wallpaper"><svg><use href="#i-image"/></svg>壁纸收藏</button>
+<button class="nav-item" data-view="manage"><svg><use href="#i-folder"/></svg>桌面管理</button>
+<button class="nav-item" data-view="saved"><svg><use href="#i-grid"/></svg>我的方案<span class="saved-count">0</span></button>
+</nav>
+<div class="sidebar-note"><div class="mini-split"><span></span><span></span></div><strong>一点个性，很大不同。</strong><p>把每天面对的桌面，<br>变成喜欢的样子。</p></div>
+<div class="sidebar-footer"><span class="avatar">D</span><div><strong>本地工作空间</strong><small>方案保存在此浏览器</small></div><span class="local-dot"></span></div>
+</aside>
+<div class="main-shell">
+<header class="topbar"><div class="breadcrumb">工作空间<svg><use href="#i-chevron"/></svg><span id="breadcrumb-current">桌面设计</span></div><div class="topbar-right"><span class="prototype-badge">交互原型</span><button class="icon-button" id="help" aria-label="使用说明">?</button></div></header>
+<main>
+<div class="page-heading"><div><div class="heading-kicker">给日常，留一点想象</div><h1 id="page-title">桌面，由你定义<span>。</span></h1><p id="page-description">分开空间，连接灵感。创造一个刚刚好的桌面。</p></div><div class="heading-actions"><button class="button secondary" id="export"><svg><use href="#i-arrow"/></svg>导出壁纸</button><button class="button primary" id="save"><svg><use href="#i-save"/></svg>保存方案</button></div></div>
+<div id="editor-view">
+<div class="editor-layout">
+<section class="preview-panel" aria-label="桌面实时预览">
+<div class="panel-toolbar"><div class="preview-title"><svg><use href="#i-screen"/></svg><strong>桌面预览</strong><span class="live-label"><i></i>实时</span></div><div class="preview-controls"><select id="aspect" aria-label="屏幕比例"><option value="1.6">16 : 10</option><option value="1.777777778">16 : 9</option><option value="1.333333333">4 : 3</option></select><span class="toolbar-divider"></span><button id="fullscreen" class="icon-button" aria-label="全屏预览"><svg><use href="#i-expand"/></svg></button></div></div>
+<div class="preview-stage" id="preview-stage">
+<div id="desktop" class="desktop">
+<div class="wallpaper-piece piece-left" id="piece-left"></div><div class="wallpaper-piece piece-right" id="piece-right"></div>
+<canvas id="portrait-layer" hidden></canvas><button id="split-picker" hidden aria-label="点击画面选择分割位置"></button><span id="pick-hint" hidden>点击画面任意位置，设为分割控制点</span>
+<div class="desktop-top"><span><svg><use href="#i-grid"/></svg>我的桌面</span><span>周三 &nbsp; 10月21日 <b id="clock">09:41</b></span></div>
+<div class="desktop-greeting"><div>Make room<br>for your ideas.</div><span>自己的空间，自在的节奏。</span></div>
+<div class="desktop-zones" id="desktop-zones"></div>
+<svg id="split-guide" aria-hidden="true"><line id="split-guide-line"/></svg>
+<button class="split-handle" id="split-handle" aria-label="拖动分割控制点" title="拖动任意位置；方向键微调，Shift 加速"><span>‹</span><span>›</span></button>
+<button class="split-endpoint" id="split-start" aria-label="拖动分割线上端" title="拖动调整分割线端点"></button><button class="split-endpoint" id="split-end" aria-label="拖动分割线下端" title="拖动调整分割线端点"></button>
+<div class="desktop-dock"><span class="dock-icon blue"><svg><use href="#i-folder"/></svg></span><span class="dock-icon white"><svg><use href="#i-image"/></svg></span><span class="dock-icon violet"><svg><use href="#i-code"/></svg></span><span class="dock-icon coral"><svg><use href="#i-music"/></svg></span><i></i><span class="dock-icon gray"><svg><use href="#i-grid"/></svg></span></div>
+<span class="desktop-caption" id="desktop-caption">山间来信</span>
+</div>
+</div>
+<div class="preview-footer"><span><span class="small-dot"></span><span id="resolution-label">1600 × 1000</span><span class="footer-separator">/</span>主显示器预览</span><button id="toggle-icons" class="text-button">隐藏桌面图标</button></div>
+</section>
+<aside class="inspector" aria-label="桌面设置">
+<div class="inspector-header"><h2 id="inspector-title">分裂设置</h2><button class="icon-button" id="reset" aria-label="重置当前桌面"><svg><use href="#i-reset"/></svg></button></div>
+<div id="design-controls">
+<div class="control-section"><div class="control-label"><label>分裂方式</label></div><div class="mode-selector"><button data-mode="single"><span class="mode-icon one"></span>完整</button><button data-mode="vertical"><span class="mode-icon two"></span>垂直</button><button class="selected" data-mode="diagonal"><span class="mode-icon diagonal"></span>斜切</button></div></div>
+<div class="control-section position-controls"><button class="button secondary full-width" id="pick-split"><svg><use href="#i-plus"/></svg>在画面上选分割位置</button><p class="field-hint" id="area-summary"></p></div>
+<div class="control-section sliders"><div class="slider-control"><div class="control-label"><label for="angle">分裂角度</label><output for="angle" id="angle-value">15°</output></div><input id="angle" type="range" min="-80" max="80" value="15"><div class="range-labels"><span>−80°</span><span>0°</span><span>80°</span></div></div>
+<div class="slider-control"><div class="control-label"><label for="ratio">控制点横向位置</label><output for="ratio" id="ratio-value">58%</output></div><input id="ratio" type="range" min="1" max="99" value="58"><div class="range-labels"><span>靠左 1%</span><span>靠右 99%</span></div></div>
+<div class="slider-control"><div class="control-label"><label for="anchor-y">控制点纵向位置</label><output for="anchor-y" id="anchor-y-value">50%</output></div><input id="anchor-y" type="range" min="1" max="99" value="50"><div class="range-labels"><span>靠上 1%</span><span>靠下 99%</span></div></div>
+<div class="slider-control"><div class="control-label"><label for="gap">分裂间距</label><output for="gap" id="gap-value">16 px</output></div><input id="gap" type="range" min="0" max="60" value="16"><div class="range-labels"><span>无间距</span><span>60 px</span></div></div></div>
+<div class="control-section"><div class="switch-row"><div><label for="linked">壁纸跟随分裂</label><small>左右画面随区域移动、缩放</small></div><input type="checkbox" id="linked" class="switch" checked></div><div class="switch-row portrait-switch"><div><label for="protect-person">人物优先</label><small>人物整体移动，分割缝经过背景</small></div><input type="checkbox" id="protect-person" class="switch"></div><p id="portrait-motion-hint" class="field-hint" hidden>拖动控制点会整体平移画面；为保留移动空间，壁纸边缘会适量裁切。</p><p id="person-status" class="field-hint" role="status" aria-live="polite">在本机识别人像，不上传照片</p><button class="text-button" id="retry-person" hidden>重新识别</button>
+<details id="source-options"><summary>原图切分位置</summary><p class="field-hint">普通分裂时可指定原图从哪里切开，不必固定对半。</p><div id="source-preview" role="img" aria-label="原图切分位置预览"><span id="source-cut-marker"></span></div><div class="control-label"><label for="source-cut">原图左侧占比</label><output id="source-cut-value">50%</output></div><input id="source-cut" type="range" min="5" max="95" value="50"></details>
+<div class="color-row"><label for="gap-color">间隙颜色</label><div class="color-input"><input type="color" id="gap-color" value="#e9eff4"><span id="color-value">#E9EFF4</span></div></div></div>
+</div>
+<div id="wallpaper-controls" hidden><p class="inspector-description">选择下方壁纸，或导入自己的图片。壁纸会同时应用到两侧区域。</p><button class="button secondary full-width upload-trigger"><svg><use href="#i-plus"/></svg>导入本地壁纸</button><div class="control-section"><div class="control-label"><label for="wallpaper-scale">壁纸缩放</label><output id="wallpaper-scale-value">100%</output></div><input type="range" id="wallpaper-scale" min="100" max="160" value="100"></div><div class="control-section"><div class="control-label"><label for="focus-x">壁纸横向取景</label><output id="focus-x-value">50%</output></div><input id="focus-x" type="range" min="0" max="100" value="50"><div class="control-label"><label for="focus-y">壁纸纵向取景</label><output id="focus-y-value">50%</output></div><input id="focus-y" type="range" min="0" max="100" value="50"><p class="field-hint">画面超出桌面时，调整取景以保留人物。</p></div><p class="field-hint">支持 JPG、PNG、WebP。图片在本地处理。</p></div>
+<div id="manage-controls" hidden><p class="inspector-description">将图标拖入不同分区，让工作与日常各归其位。</p><label class="field-label" for="zone-name">新增收纳分区</label><div class="inline-form"><input id="zone-name" maxlength="12" placeholder="例如：灵感素材"><button class="button primary" id="add-zone" aria-label="添加分区"><svg><use href="#i-plus"/></svg></button></div><label class="field-label" for="item-name">新增快捷项（演示）</label><div class="inline-form"><input id="item-name" maxlength="16" placeholder="例如：产品设计"><button class="button secondary" id="add-item" aria-label="添加快捷项"><svg><use href="#i-plus"/></svg></button></div><button class="button secondary full-width" id="organize"><svg><use href="#i-grid"/></svg>按类型一键整理</button><p class="field-hint">这里的图标是示例快捷项。真实文件管理将在系统客户端中接入。</p></div>
+<div class="inspector-tip"><svg><use href="#i-split"/></svg><span>拖动控制点改变位置；<br>拖动两端改变角度。</span></div>
+</aside>
+</div>
+<section class="presets-section" id="presets-section"><div class="section-heading"><div><h2>从一个灵感开始</h2><span>选个布局，再加一点你的风格</span></div><button class="text-button" id="show-saved">我的方案<svg><use href="#i-chevron"/></svg></button></div><div class="preset-grid" id="preset-grid"></div></section>
+<section class="wallpapers-section" id="wallpapers-section" hidden><div class="section-heading"><div><h2>把风景留在桌面</h2><span>风景与人像壁纸 · 支持自定义图片</span></div><button class="text-button upload-trigger"><svg><use href="#i-plus"/></svg>导入壁纸</button></div><div class="wallpaper-grid" id="wallpaper-grid"></div></section>
+<div class="bottom-note"><span>设计留在本地，灵感属于你。</span><span>Desktop Rider <span class="version">v0.1</span></span></div>
+</div>
+<section id="saved-view" hidden><div class="saved-heading"><h2>我的桌面方案</h2><span>保存在此浏览器，随时继续设计</span></div><div id="saved-grid" class="saved-grid"></div><div id="empty-saved" class="empty-state"><svg><use href="#i-save"/></svg><h2>收好你的第一个灵感</h2><p>调整好桌面后，点击「保存方案」。<br>你的布局、壁纸和收纳分区都会留在这里。</p><button class="button primary" id="back-design">开始设计</button></div></section>
+</main>
+</div>
+</div>
+<input type="file" id="wallpaper-file" accept="image/png,image/jpeg,image/webp" hidden>
+<dialog id="save-dialog"><form id="save-form"><div class="dialog-title"><h2>给这个桌面起个名字</h2><button class="icon-button" type="button" data-close="save-dialog" aria-label="关闭">×</button></div><p>保存分裂设置、壁纸和桌面收纳分区。</p><label class="field-label" for="scheme-name">方案名称</label><input id="scheme-name" maxlength="40" required placeholder="例如：我的灵感空间"><div class="dialog-actions"><button type="button" class="button secondary" data-close="save-dialog">取消</button><button class="button primary" type="submit">保存方案</button></div></form></dialog>
+<dialog id="help-dialog"><div class="dialog-title"><h2>欢迎来到你的桌面设计室</h2><button class="icon-button" data-close="help-dialog" aria-label="关闭">×</button></div><p>这是 Desktop Rider 的可交互原型，可以在这里设计并导出自己的分裂壁纸。</p><ol><li>选择分裂方式，点击「在画面上选分割位置」指定控制点；拖动控制点或两端调整分割，方向键也可以微调。</li><li>前往「壁纸收藏」导入图片、调整取景；打开「人物优先」，在本机识别人像并让分割缝从人物后方经过。识别失败时请重试或关闭人物优先。</li><li>在「桌面管理」中创建分区，拖动图标进行整理。键盘操作可聚焦图标后按 Enter 切换分区。</li><li>保存方案后可再次载入；「导出壁纸」会生成 PNG 图片。</li></ol><p class="help-footnote">原型不会修改系统桌面或真实文件。系统壁纸应用、桌面图标接管与开机启动需要原生客户端支持。</p></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="portrait.js"></script>
+<script src="app.js"></script>
+</body></html>
