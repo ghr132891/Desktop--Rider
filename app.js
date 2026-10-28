@@ -9,7 +9,7 @@ const wallpapers = [
   {id:'sand',name:'旷野回声',tone:'沙岩',src:'assets/sand.svg'},
   {id:'portrait',name:'林间人像',tone:'人像实拍',src:'assets/portrait-wallpaper.jpg'}
 ];
-const defaults = {floatPerson:false,floatPoints:[],floatX:null,floatY:null,floatSize:null,floatFlip:false,floatShadow:true,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间'},{id:'life',name:'日常灵感'}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
+const defaults = {floatPerson:false,floatPoints:[],floatX:null,floatY:null,floatSize:null,floatFlip:false,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间'},{id:'life',name:'日常灵感'}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
 const presets = [
  {id:'focus',name:'专注斜切',desc:'灵感与效率并行',mode:'diagonal',angle:15,ratio:58,gap:16,wallpaper:'mountain'},
  {id:'balance',name:'左右有序',desc:'工作生活，各得其所',mode:'vertical',angle:0,ratio:50,gap:22,wallpaper:'forest'},
@@ -23,7 +23,7 @@ function normalizeState(input){const s={...clone(defaults),...input};
  s.ratio=clamp(s.ratio,1,99,58);s.angle=clamp(s.angle,-80,80,15);s.anchorY=clamp(s.anchorY,1,99,50);s.sourceRatio=clamp(s.sourceRatio,5,95,50);s.focusX=clamp(s.focusX,0,100,50);s.focusY=clamp(s.focusY,0,100,50);s.gap=clamp(s.gap,0,60,16);s.scale=clamp(s.scale,100,160,100);
  s.protectPerson=typeof input.protectPerson==='boolean'?input.protectPerson:input.wallpaper==='portrait';
  s.floatPoints=Array.isArray(s.floatPoints)?s.floatPoints.filter(p=>p&&[p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=1)).slice(0,24).map(p=>({x:p.x,y:p.y,add:p.add!==false})):[];
- s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatFlip=s.floatFlip===true;s.floatShadow=s.floatShadow!==false;
+ s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatFlip=s.floatFlip===true;s.floatShadow=s.floatShadow!==false;s.floatKeepOriginal=s.floatKeepOriginal===true;
  for(const [key,min,max] of [['floatX',-20,120],['floatY',-20,120],['floatSize',10,150]])s[key]=s[key]===null?null:clamp(s[key],min,max,null);return s;
 }
 let draft = readStorage('desktop-rider-draft',null);
@@ -44,7 +44,9 @@ function source(s=state){return s.customImage || wallpapers.find(w=>w.id===s.wal
 // With the person floating, the wallpaper itself is the hole-filled background.
 function floating(s){return s.floatPerson&&s.floatPoints.length>0;}
 function sceneKey(s){return floating(s)?source(s)+'#'+JSON.stringify(s.floatPoints):source(s);}
-async function scene(s){const img=await loadImage(source(s));if(!floating(s))return {src:source(s),img,cut:null};const cut=await Cutout.separate(img,source(s),s.floatPoints);if(cut.empty)return {src:source(s),img,cut:null};return {src:cut.backgroundUrl,img:await loadImage(cut.backgroundUrl),cut,original:img};}
+async function scene(s){const img=await loadImage(source(s));if(!floating(s))return {src:source(s),img,cut:null};const cut=await Cutout.separate(img,source(s),s.floatPoints);if(cut.empty)return {src:source(s),img,cut:null};
+ // Keep-original: the person stays in the picture and the floating copy is a duplicate, so no fill is shown.
+ if(s.floatKeepOriginal)return {src:source(s),img,cut,original:img};return {src:cut.backgroundUrl,img:await loadImage(cut.backgroundUrl),cut,original:img};}
 // Where the person sits in the uncut wallpaper: centre and height as % of the desktop.
 function floatFrame(s,view,w,h){
  let {floatX:x,floatY:y,floatSize:size}=s;
@@ -141,7 +143,7 @@ function updateControls(){
  $$('.preset-card').forEach(btn=>{btn.classList.toggle('selected',btn.dataset.preset===state.preset);btn.setAttribute('aria-pressed',String(btn.dataset.preset===state.preset));});
  $$('.wallpaper-card').forEach(btn=>btn.classList.toggle('selected',btn.dataset.wallpaper===state.wallpaper&&!state.customImage));
  $('.saved-count').textContent=String(saved.length);
- $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=state.floatFlip;$('#float-shadow').checked=state.floatShadow;
+ $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=state.floatFlip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
  $('#protect-person').disabled=floating(state);if(!state.floatPerson)$('#float-status').textContent='打开后自动识别主体，也可以手动点选。';
 }
 let renderFrame;
@@ -239,6 +241,7 @@ $('#float-toggle').addEventListener('change',async e=>{
 $('#float-size').addEventListener('input',e=>{pinFloat();state.floatSize=clampSize(Number(e.target.value));updateFloat();});
 $('#float-flip').addEventListener('change',e=>{state.floatFlip=e.target.checked;updateFloat();});
 $('#float-shadow').addEventListener('change',e=>{state.floatShadow=e.target.checked;updateFloat();});
+$('#float-keep').addEventListener('change',e=>{state.floatKeepOriginal=e.target.checked;update();});
 $('#float-reset').addEventListener('click',()=>{Object.assign(state,{floatX:null,floatY:null,floatSize:null});updateFloat();toast('人物已放回原位置');});
 $('#edit-cutout').addEventListener('click',()=>openCutout());
 const floatEl=$('#float-person');let floatDrag=null;

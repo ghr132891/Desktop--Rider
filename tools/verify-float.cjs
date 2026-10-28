@@ -53,6 +53,15 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
    const view=await scene(s),f=floatFrame(s,view,w,h),px=(c,x,y)=>[...c.getContext('2d').getImageData(x,y,1,1).data];
    const cx=Math.round(f.left+f.w/2),cy=Math.round(f.top+f.h*.3);return {on:px(on,cx,cy),off:px(off,cx,cy),floatIn:f.w>10&&f.h>10};});
   assert.ok(exportCheck.floatIn);assert.notDeepEqual(exportCheck.on,exportCheck.off,'export contains floating person');
+  // Keep-original: the person stays at the source spot while the floating copy is still drawn.
+  await page.locator('#float-keep').check();await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:60000});
+  const keepCheck=await page.evaluate(async()=>{const s=clone(state),w=800,h=500,keep=await wallpaperCanvas(s,w),plain=await wallpaperCanvas({...s,floatPerson:false},w),filled=await wallpaperCanvas({...s,floatKeepOriginal:false},w);
+   const view=await scene({...s,floatKeepOriginal:false}),img=view.original,b=view.cut.box,sx=Math.round((b.x+b.w/2)*w),sy=Math.round((b.y+b.h*.3)*h),px=(c,x,y)=>[...c.getContext('2d').getImageData(x,y,1,1).data].slice(0,3);
+   const f=floatFrame(s,view,w,h),cx=Math.round(f.left+f.w/2),cy=Math.round(f.top+f.h*.3);return {keepSrc:px(keep,sx,sy),plainSrc:px(plain,sx,sy),filledSrc:px(filled,sx,sy),keepFloat:px(keep,cx,cy),plainFloat:px(plain,cx,cy)};});
+  assert.deepEqual(keepCheck.keepSrc,keepCheck.plainSrc,'keep-original leaves the source spot untouched');
+  assert.ok(keepCheck.filledSrc.some((v,i)=>Math.abs(v-keepCheck.keepSrc[i])>12),'fill changes the source spot when not keeping');
+  assert.notDeepEqual(keepCheck.keepFloat,keepCheck.plainFloat,'floating copy still drawn');
+  await page.locator('#float-keep').uncheck();await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:60000});
 
   // 4. Persistence and reset.
   await page.evaluate(()=>persistNow());await page.reload();
@@ -115,6 +124,6 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
    document.querySelector('#we-dialog').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));},[['project.json',fs.readFileSync(path.join(root,'1002','project.json')).toString('base64')],['index.html',Buffer.from('<p>').toString('base64')],['preview.png',png.toString('base64')]]);
   await page.locator('.we-item',{hasText:'测试网页'}).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('PASS: auto cutout, hole fill, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview, file picker / loose files / drop import; no browser errors.');
+  console.log('PASS: auto cutout, hole fill, keep-original, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview, file picker / loose files / drop import; no browser errors.');
  }finally{await browser.close();fs.rmSync(fixture,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});
