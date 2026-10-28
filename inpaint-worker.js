@@ -2,7 +2,7 @@
 // Exemplar-based hole filling: multi-scale PatchMatch + weighted voting (Wexler et al.).
 // Copies real texture from the rest of the picture instead of smearing colour into
 // the hole. Coarse levels run full EM; large levels only refine the upsampled match.
-const R=3,WORK=640*640;
+const R=3,WORK=640*640,LOCY=5e5; // LOCY: penalty for sourcing from other rows, see patchmatch
 let seed=1;const rand=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return (seed>>>0)/4294967296;};
 function down(l){
  const w=Math.ceil(l.w/2),h=Math.ceil(l.h/2),rgb=new Float32Array(w*h*3),hole=new Uint8Array(w*h);
@@ -26,13 +26,16 @@ function dist(l,rgb,px,py,s,best){
   if(d>=best)return d;}
  return d;
 }
+// Wallpapers are mostly layered top to bottom (sky, trees, water, floor), so a
+// source from another row band is charged as if it differed by ~20 levels per
+// channel at a quarter of the image height. Stops floor texture climbing into the sky.
 function patchmatch(l,rgb,reg,nnf,nd,iters,radius){
  const {w,h}=l,{ok,targets}=reg,n=w*h;
- for(const t of targets)nd[t]=dist(l,rgb,t%w,(t/w)|0,nnf[t],Infinity);
+ for(const t of targets){const py=(t/w)|0,dy=((nnf[t]/w)|0)-py;nd[t]=dist(l,rgb,t%w,py,nnf[t],Infinity)+LOCY*dy*dy/(h*h);}
  for(let it=0;it<iters;it++){const step=it&1?-1:1;
   for(let k=step>0?0:targets.length-1;k>=0&&k<targets.length;k+=step){
    const t=targets[k],px=t%w,py=(t/w)|0;let best=nd[t],bs=nnf[t];
-   const consider=s=>{if(s<0||s>=n||s===bs||!ok[s])return;const d=dist(l,rgb,px,py,s,best);if(d<best){best=d;bs=s;}};
+   const consider=s=>{if(s<0||s>=n||s===bs||!ok[s])return;const dy=((s/w)|0)-py,pen=LOCY*dy*dy/(h*h);if(pen>=best)return;const d=dist(l,rgb,px,py,s,best-pen)+pen;if(d<best){best=d;bs=s;}};
    const nx=px-step;if(nx>=0&&nx<w&&nnf[t-step]>=0){const c=nnf[t-step]+step;if(((c/w)|0)===((nnf[t-step]/w)|0))consider(c);}
    const ny=py-step;if(ny>=0&&ny<h&&nnf[t-step*w]>=0)consider(nnf[t-step*w]+step*w);
    const sx=bs%w,sy=(bs/w)|0;for(let r=radius;r>=1;r>>=1){const x=sx+Math.round((rand()*2-1)*r),y=sy+Math.round((rand()*2-1)*r);if(x>=0&&y>=0&&x<w&&y<h)consider(y*w+x);}
@@ -49,7 +52,20 @@ function vote(l,reg,nnf,nd,sharp){
     acc[q*4]+=rgb[b]*wt;acc[q*4+1]+=rgb[b+1]*wt;acc[q*4+2]+=rgb[b+2]*wt;acc[q*4+3]+=wt;}}}
  for(let q=0;q<w*h;q++){const a=acc[q*4+3];if(a){rgb[q*3]=acc[q*4]/a;rgb[q*3+1]=acc[q*4+1]/a;rgb[q*3+2]=acc[q*4+2]/a;}}
 }
-// Coarsest start: peel the hole from its border inwards with neighbour averages.
+// Coarsest start: each hole pixel interpolates between its nearest known pixels
+// along the row and along the column, nearer ones counting more. Horizons, floor
+// edges and poles continue straight through the hole instead of melting into a blob.
+function axisFill(l){
+ const {w,h,rgb,hole}=l,n=w*h,L=new Int32Array(n).fill(-1),Rt=new Int32Array(n).fill(-1),T=new Int32Array(n).fill(-1),B=new Int32Array(n).fill(-1);
+ for(let y=0;y<h;y++){let k=-1;for(let x=0;x<w;x++){const i=y*w+x;if(!hole[i])k=i;L[i]=k;}k=-1;for(let x=w-1;x>=0;x--){const i=y*w+x;if(!hole[i])k=i;Rt[i]=k;}}
+ for(let x=0;x<w;x++){let k=-1;for(let y=0;y<h;y++){const i=y*w+x;if(!hole[i])k=i;T[i]=k;}k=-1;for(let y=h-1;y>=0;y--){const i=y*w+x;if(!hole[i])k=i;B[i]=k;}}
+ const out=new Float32Array(rgb);
+ for(let i=0;i<n;i++){if(!hole[i])continue;const x=i%w,y=(i/w)|0;let a=0,b=0,c=0,s=0;
+  for(const [j,d] of [[L[i],x-(L[i]%w)],[Rt[i],(Rt[i]%w)-x],[T[i],y-((T[i]/w)|0)],[B[i],((B[i]/w)|0)-y]]){if(j<0)continue;const wt=1/(d*d);a+=rgb[j*3]*wt;b+=rgb[j*3+1]*wt;c+=rgb[j*3+2]*wt;s+=wt;}
+  if(s){out[i*3]=a/s;out[i*3+1]=b/s;out[i*3+2]=c/s;}}
+ rgb.set(out);
+}
+// Fallback when the hole has no known pixels on any axis (degenerate masks).
 function diffuse(l){
  const {w,h,rgb,hole}=l,known=Uint8Array.from(hole,v=>v?0:1);let left=hole.reduce((a,v)=>a+v,0);
  while(left>0){const next=[];
@@ -64,7 +80,7 @@ function inpaint(pixels,alpha,w,h){
  const levels=[{w,h,rgb,hole}];while(Math.max(levels.at(-1).w,levels.at(-1).h)>48)levels.push(down(levels.at(-1)));
  const regs=levels.map(regions);let start=levels.length-1;while(start>0&&regs[start].src.length<64)start--;
  if(!regs[start].src.length){diffuse(levels[0]);return levels[0].rgb;}
- diffuse(levels[start]);let prev=null;
+ axisFill(levels[start]);diffuse(levels[start]);let prev=null;
  for(let L=start;L>=0;L--){
   const l=levels[L],reg=regs[L],nnf=new Int32Array(l.w*l.h).fill(-1),nd=new Float32Array(l.w*l.h),{src,ok,targets}=reg;
   if(!targets.length)break;
