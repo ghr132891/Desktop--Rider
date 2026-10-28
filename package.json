@@ -2,6 +2,7 @@
   "name": "desktop-rider",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "可交互桌面 DIY 工作台原型",
   "scripts": { "start": "python3 tools/serve.py", "check": "node --check app.js" }
 }

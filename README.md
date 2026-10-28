@@ -72,3 +72,12 @@ python3 tools/serve.py
 人物悬浮与 Wallpaper Engine 导入回归：`node tools/verify-float.cjs`。覆盖自动抠图、背景补全、拖动 / 滚轮 / 键盘、导出位置、刷新恢复、点选添加 / 去除，以及用测试生成的 scene.pkg（内嵌 PNG 与 LZ4 原始 RGBA 纹理）验证文件夹扫描和图层解码。
 
 拖动画面回归：`node tools/verify-drag-motion.cjs`，检查鼠标尚未松开时画面已经更新（含垂直线纯纵向拖动），并验证人物整体变换、关闭联动和导出一致性。
+
+## 许可证
+
+本项目代码以 MIT 许可证发布，全文见 `LICENSE`。
+
+以下第三方内容不属于 MIT 授权范围，仍按各自许可证使用：
+
+- `vendor/mediapipe/` 运行库与 `assets/models/` 中的模型：Google MediaPipe，Apache License 2.0（见 `vendor/mediapipe/LICENSE`）。
+- `assets/portrait-sunset.jpg`、`assets/portrait-wallpaper.jpg`：Pexels 授权照片，来源与许可见 `assets/CREDITS.md`。
