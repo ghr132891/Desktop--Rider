@@ -13,6 +13,8 @@ function tex({format=0,width,height,container,fif=-1,data,lz4=0,raw=0}){
 // Solid RGBA as one LZ4 block: 4 literals, an overlapping match, 5 trailing literals.
 function lz4Solid(rgba,bytes){const ext=n=>{const out=[];n-=15;while(n>=255){out.push(255);n-=255;}out.push(n);return out;};const match=bytes-4-5-4;
  return Buffer.from([0x4f,...rgba,4,0,...ext(match),0x50,rgba[3],...rgba]);}
+// DXT5: alpha endpoints 200/40 (index 0 → 200), colour endpoint 0 = pure green.
+const dxt5Solid=(w,h)=>Buffer.concat(Array.from({length:(w/4)*(h/4)},()=>Buffer.from([200,40,0,0,0,0,0,0,0xe0,0x07,0,0,0,0,0,0])));
 function pkg(files){const names=Object.keys(files);let offset=0;const table=[pstr('PKGV0024'),i32(names.length)];
  for(const n of names){table.push(pstr(n),i32(offset),i32(files[n].length));offset+=files[n].length;}return Buffer.concat([...table,...names.map(n=>files[n])]);}
 (async()=>{
@@ -71,20 +73,28 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   // 6. Wallpaper Engine folder: embedded PNG layer and LZ4 raw RGBA layer.
   const pngData=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=800;c.height=500;const x=c.getContext('2d');x.fillStyle='#3a7';x.fillRect(0,0,800,500);x.fillStyle='#e43';x.fillRect(250,125,300,250);return c.toDataURL('image/png').split(',')[1];});
   const png=Buffer.from(pngData,'base64'),rawBytes=512*512*4,raw=lz4Solid([10,20,200,255],rawBytes);
-  const scene=pkg({'scene.json':Buffer.from('{}'),'materials/main.tex':tex({width:800,height:500,container:'TEXB0003',fif:13,data:png}),'materials/blue.tex':tex({width:512,height:512,container:'TEXB0002',data:raw,lz4:1,raw:rawBytes}),'materials/masks/m.tex':tex({format:9,width:512,height:512,container:'TEXB0003',data:Buffer.alloc(512*512)})});
+  const scene=pkg({'scene.json':Buffer.from('{}'),'materials/main.tex':tex({width:800,height:500,container:'TEXB0003',fif:13,data:png}),'materials/blue.tex':tex({width:512,height:512,container:'TEXB0002',data:raw,lz4:1,raw:rawBytes}),'materials/dxt.tex':tex({format:4,width:512,height:512,container:'TEXB0003',data:dxt5Solid(512,512)}),'materials/masks/m.tex':tex({format:9,width:512,height:512,container:'TEXB0003',data:Buffer.alloc(512*512)})});
   const root=path.join(fixture,'431960');for(const [id,project,files] of [['1001',{title:'测试场景',type:'scene',file:'scene.json',preview:'preview.png'},{'scene.pkg':scene,'preview.png':png}],['1002',{title:'测试网页',type:'web',file:'index.html',preview:'preview.png'},{'index.html':Buffer.from('<p>'),'preview.png':png}]]){
    const dir=path.join(root,id);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'project.json'),JSON.stringify(project));for(const [n,b] of Object.entries(files))fs.writeFileSync(path.join(dir,n),b);}
   await page.locator('[data-view=wallpaper]').click();await page.locator('#wallpaper-controls .we-trigger').click();
   await page.locator('#we-folder').setInputFiles(root);
   await page.locator('#we-summary').filter({hasText:'找到 2 个壁纸'}).waitFor();
   await page.locator('.we-item',{hasText:'测试场景'}).click();
-  await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===3);
+  await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===4);
   const labels=await page.locator('.we-source span').allTextContents();
-  assert.match(labels[0],/main · 800×500/);assert.match(labels[1],/blue · 512×512/);assert.match(labels[2],/预览图/);
+  assert.match(labels[0],/main · 800×500/);assert.match(labels[1],/blue · 512×512/);assert.match(labels[2],/dxt · 512×512/);assert.match(labels[3],/预览图/);
   await page.locator('.we-source').nth(1).click();await page.locator('#we-apply').click();await page.waitForFunction(()=>!document.querySelector('#we-dialog').open);
   const blue=await page.evaluate(async()=>{const i=await loadImage(state.customImage),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);return [i.naturalWidth,[...x.getImageData(256,256,1,1).data]];});
   assert.equal(blue[0],512);assert.ok(Math.abs(blue[1][2]-200)<8&&blue[1][0]<20,'LZ4 RGBA layer decoded: '+blue[1]);
-  await page.locator('#wallpaper-controls .we-trigger').click();await page.locator('.we-item',{hasText:'测试场景'}).click();await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===3);
+  await page.locator('#wallpaper-controls .we-trigger').click();await page.locator('.we-item',{hasText:'测试场景'}).click();await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===4);
+  await page.locator('.we-source').nth(2).click();await page.locator('#we-apply').click();await page.waitForFunction(()=>!document.querySelector('#we-dialog').open);
+  const green=await page.evaluate(async()=>{const i=await loadImage(state.customImage),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);return [...x.getImageData(256,256,1,1).data];});
+  assert.ok(green[1]>150&&green[0]<90&&green[2]<90,'DXT5 layer decoded: '+green);
+  // DXT1 block, one index per row: 4-colour mode (c0>c1) and 3-colour mode with transparency.
+  const block=await page.evaluate(()=>{const px=(d,i)=>[...d.slice(i*16,i*16+4)];const four=WallpaperEngine.dxt(new Uint8Array([0x00,0xf8,0x1f,0x00,0x00,0x55,0xaa,0xff]),4,4,7),three=WallpaperEngine.dxt(new Uint8Array([0x1f,0x00,0x00,0xf8,0x00,0x55,0xaa,0xff]),4,4,7);
+   return {four:[0,1,2,3].map(r=>px(four,r)),three:[2,3].map(r=>px(three,r))};});
+  assert.deepEqual(block.four,[[255,0,0,255],[0,0,255,255],[170,0,85,255],[85,0,170,255]]);assert.deepEqual(block.three,[[128,0,128,255],[0,0,0,0]]);
+  await page.locator('#wallpaper-controls .we-trigger').click();await page.locator('.we-item',{hasText:'测试场景'}).click();await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===4);
   await page.locator('#we-apply').click();await page.waitForFunction(()=>!document.querySelector('#we-dialog').open);
   const main=await page.evaluate(async()=>{const i=await loadImage(state.customImage),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);return [i.naturalWidth,i.naturalHeight,[...x.getImageData(400,250,1,1).data]];});
   assert.deepEqual(main.slice(0,2),[800,500]);assert.ok(main[2][0]>200&&main[2][1]<90,'embedded PNG layer decoded');
@@ -92,6 +102,6 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   await page.locator('#wallpaper-controls .we-trigger').click();await page.locator('.we-item',{hasText:'测试网页'}).click();
   assert.deepEqual(await page.locator('.we-source span').allTextContents(),['预览图（分辨率较低）']);
   assert.deepEqual(errors,[]);
-  console.log('PASS: auto cutout, hole fill, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, PNG + LZ4 layers, web preview; no browser errors.');
+  console.log('PASS: auto cutout, hole fill, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, PNG + LZ4 + DXT layers, web preview; no browser errors.');
  }finally{await browser.close();fs.rmSync(fixture,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});

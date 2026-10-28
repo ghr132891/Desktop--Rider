@@ -22,37 +22,27 @@ const Cutout = (()=>{
   for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(alpha[(y*w+x)*4+3]>12){count++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
   return {mask,coverage:count/(w*h),box:x1<0?null:{x:x0,y:y0,w:x1-x0+1,h:y1-y0+1}};
  }
- // Push-pull fill: halve the holed image until it is tiny (canvas averages with
- // premultiplied alpha, so holes don't darken), then paint each coarser level
- // behind the finer one. Smooth, plausible colour; not texture synthesis.
- function fill(img,mask){
-  const w=img.naturalWidth,h=img.naturalHeight,r=Math.max(4,Math.round(Math.max(w,h)*.014));
+ let worker,nextJob=0;const jobs=new Map();
+ function inpaintWorker(){if(worker)return worker;worker=new Worker('inpaint-worker.js');
+  worker.onmessage=({data})=>{const job=jobs.get(data.id);if(!job)return;jobs.delete(data.id);data.error?job.reject(new Error(data.error)):job.resolve(data.pixels);};
+  worker.onerror=()=>{worker.terminate();worker=null;for(const job of jobs.values())job.reject(new Error('背景补全失败，请重试'));jobs.clear();};return worker;}
+ // Hole = the person grown by a soft ring (shadows, hair halo). Inside it texture is
+ // rebuilt from the rest of the picture in a worker; the ring blends back to the original.
+ async function fill(img,mask){
+  const w=img.naturalWidth,h=img.naturalHeight,r=Math.max(4,Math.round(Math.max(w,h)*.01));
   const hole=canvas(w,h),hc=hole.getContext('2d',{willReadFrequently:true});hc.filter=`blur(${r}px)`;hc.drawImage(mask,0,0);hc.filter='none';
-  const grown=hc.getImageData(0,0,w,h);for(let i=3;i<grown.data.length;i+=4)grown.data[i]=Math.min(255,grown.data[i]*3);hc.putImageData(grown,0,0);
-  const base=canvas(w,h),bc=base.getContext('2d',{willReadFrequently:true});bc.drawImage(img,0,0);bc.globalCompositeOperation='destination-out';bc.drawImage(hole,0,0);
-  const levels=[base];
-  while(levels.at(-1).width>2||levels.at(-1).height>2){const p=levels.at(-1),c=canvas(Math.ceil(p.width/2),Math.ceil(p.height/2)),ctx=c.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingQuality='high';ctx.drawImage(p,0,0,c.width,c.height);levels.push(c);}
-  for(let i=levels.length-1;i>=1;i--){
-   const c=levels[i],ctx=c.getContext('2d',{willReadFrequently:true}),d=ctx.getImageData(0,0,c.width,c.height);
-   // Faint pixels carry badly quantised colour; let the coarser level supply them.
-   for(let j=3;j<d.data.length;j+=4){if(d.data[j]>=32)d.data[j]=255;else if(i===levels.length-1){d.data[j-3]=d.data[j-2]=d.data[j-1]=128;d.data[j]=255;}else d.data[j]=0;}
-   ctx.putImageData(d,0,0);if(i<levels.length-1){ctx.globalCompositeOperation='destination-over';ctx.drawImage(levels[i+1],0,0,c.width,c.height);}
-  }
-  // Blend the fill over a ring wider than the hole and add faint grain, so the
-  // flat patch fades into the surrounding texture instead of showing a silhouette.
-  const edge=canvas(w,h),ec=edge.getContext('2d',{willReadFrequently:true});ec.filter=`blur(${r*2}px)`;ec.drawImage(hole,0,0);ec.filter='none';
-  const weight=ec.getImageData(0,0,w,h);for(let i=3;i<weight.data.length;i+=4)weight.data[i]=Math.min(255,weight.data[i]*2);ec.putImageData(weight,0,0);
-  const patch=canvas(w,h),pc=patch.getContext('2d');pc.imageSmoothingQuality='high';pc.drawImage(levels[1]||base,0,0,w,h);pc.globalCompositeOperation='destination-in';pc.drawImage(edge,0,0);
-  const out=canvas(w,h),oc=out.getContext('2d',{willReadFrequently:true});oc.drawImage(img,0,0);oc.drawImage(patch,0,0);
-  const d=oc.getImageData(0,0,w,h);for(let i=0;i<d.data.length;i+=4){const a=weight.data[i+3];if(a){let x=(i>>2)+1;x^=x<<13;x^=x>>>17;x^=x<<5;const n=((x>>>0)%1024/1023-.5)*12*a/255;d.data[i]+=n;d.data[i+1]+=n;d.data[i+2]+=n;}}
-  oc.putImageData(d,0,0);return out;
+  const grown=hc.getImageData(0,0,w,h).data,alpha=new Uint8Array(w*h);for(let i=0;i<alpha.length;i++)alpha[i]=Math.min(255,grown[i*4+3]*3);
+  const out=canvas(w,h),oc=out.getContext('2d',{willReadFrequently:true});oc.drawImage(img,0,0);const original=oc.getImageData(0,0,w,h);
+  const filled=await new Promise((resolve,reject)=>{const id=++nextJob,pixels=new Uint8ClampedArray(original.data);jobs.set(id,{resolve,reject});inpaintWorker().postMessage({id,pixels,alpha,width:w,height:h},[pixels.buffer]);});
+  const d=original.data;for(let i=0;i<alpha.length;i++){const a=alpha[i]/255;if(a)for(let c=0;c<3;c++)d[i*4+c]=d[i*4+c]*(1-a)+filled[i*4+c]*a;}
+  oc.putImageData(original,0,0);return out;
  }
  async function separate(img,key,points){
   const id=key+'|'+JSON.stringify(points);if(results.has(id))return results.get(id);
   const task=(async()=>{
    const {mask,box}=await combine(img,key,points);if(!box)return {empty:true};
    const cut=canvas(box.w,box.h),cc=cut.getContext('2d');cc.drawImage(img,-box.x,-box.y);cc.globalCompositeOperation='destination-in';cc.drawImage(mask,-box.x,-box.y);
-   const background=fill(img,mask),[cutoutUrl,backgroundUrl]=await Promise.all([toUrl(cut,'image/png'),toUrl(background,'image/jpeg')]);
+   const background=await fill(img,mask),[cutoutUrl,backgroundUrl]=await Promise.all([toUrl(cut,'image/png'),toUrl(background,'image/jpeg')]);
    const w=img.naturalWidth,h=img.naturalHeight;
    return {empty:false,cutout:cut,cutoutUrl,backgroundUrl,box:{x:box.x/w,y:box.y/h,w:box.w/w,h:box.h/h}};
   })();

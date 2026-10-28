@@ -53,14 +53,32 @@ const WallpaperEngine = (()=>{
   const container=r.cstr(),images=r.i32();let fif=-1;if(container==='TEXB0003'||container==='TEXB0004')fif=r.i32();if(container==='TEXB0004')r.i32();
   return {format,flags,width,height,container,images,fif};
  }
+ // Wallpaper Engine texture formats 4/6/7 = DXT5/DXT3/DXT1 (BC3/BC2/BC1), 4×4 blocks.
+ const dxts={4:16,6:16,7:8};
+ function dxt(data,w,h,format){
+  const bw=Math.ceil(w/4),bh=Math.ceil(h/4),size=dxts[format];if(data.length<bw*bh*size)return null;
+  const out=new Uint8ClampedArray(w*h*4),alpha=new Uint8Array(16).fill(255),pal=new Float32Array(8),col=new Float32Array(16);
+  for(let by=0;by<bh;by++)for(let bx=0;bx<bw;bx++){let o=(by*bw+bx)*size;
+   if(format===6){for(let i=0;i<16;i++)alpha[i]=(data[o+(i>>1)]>>((i&1)*4)&15)*17;o+=8;}
+   else if(format===4){const a0=data[o],a1=data[o+1];pal[0]=a0;pal[1]=a1;for(let i=2;i<8;i++)pal[i]=a0>a1?((8-i)*a0+(i-1)*a1)/7:i<6?((6-i)*a0+(i-1)*a1)/5:i===6?0:255;
+    const lo=data[o+2]|data[o+3]<<8|data[o+4]<<16,hi=data[o+5]|data[o+6]<<8|data[o+7]<<16;for(let i=0;i<16;i++)alpha[i]=pal[(i<8?lo>>3*i:hi>>3*(i-8))&7];o+=8;}
+   const c0=data[o]|data[o+1]<<8,c1=data[o+2]|data[o+3]<<8,bits=(data[o+4]|data[o+5]<<8|data[o+6]<<16|data[o+7]<<24)>>>0,four=format!==7||c0>c1;
+   for(const [k,c] of [[0,c0],[1,c1]]){col[k*4]=(c>>11&31)*255/31;col[k*4+1]=(c>>5&63)*255/63;col[k*4+2]=(c&31)*255/31;col[k*4+3]=255;}
+   for(let j=0;j<3;j++){col[8+j]=four?(2*col[j]+col[4+j])/3:(col[j]+col[4+j])/2;col[12+j]=four?(col[j]+2*col[4+j])/3:0;}col[11]=255;col[15]=four?255:0;
+   for(let i=0;i<16;i++){const x=bx*4+(i&3),y=by*4+(i>>2);if(x>=w||y>=h)continue;const k=(bits>>>2*i&3)*4,p=(y*w+x)*4;
+    out[p]=col[k];out[p+1]=col[k+1];out[p+2]=col[k+2];out[p+3]=format===7?col[k+3]:alpha[i];}
+  }
+  return out;
+ }
  const sniff=b=>b[0]===0xff&&b[1]===0xd8?'image/jpeg':b[0]===0x89&&b[1]===0x50?'image/png':b[0]===0x47&&b[1]===0x49?'image/gif':b[0]===0x52&&b[8]===0x57?'image/webp':'';
  async function texImage(file,entry){
   const r=reader(await file.slice(entry.offset,entry.offset+entry.length).arrayBuffer()),head=texHeader(r);
   r.i32();const mw=r.i32(),mh=r.i32();let lz4=0,raw=0;if(head.container!=='TEXB0001'){lz4=r.i32();raw=r.i32();}
   let data=r.bytes(r.i32());if(lz4)data=lz4Block(data,raw);
   const type=sniff(data);if(type)return new Blob([data],{type});
-  if(head.format!==0||data.length<mw*mh*4)return null; // DXT and single-channel masks are skipped
-  const c=document.createElement('canvas');c.width=head.width;c.height=head.height;c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data.buffer,data.byteOffset,mw*mh*4),mw,mh),0,0);
+  const rgba=head.format===0?(data.length>=mw*mh*4?new Uint8ClampedArray(data.buffer,data.byteOffset,mw*mh*4):null):dxts[head.format]?dxt(data,mw,mh,head.format):null;
+  if(!rgba)return null; // RG88 / R8 masks are skipped
+  const c=document.createElement('canvas');c.width=head.width;c.height=head.height;c.getContext('2d').putImageData(new ImageData(rgba,mw,mh),0,0);
   return new Promise(resolve=>c.toBlob(resolve,'image/png'));
  }
  // Large picture layers only: masks, effects, particles and sprite sheets are noise.
@@ -75,5 +93,5 @@ const WallpaperEngine = (()=>{
   }
   return layers;
  }
- return {scan,sceneLayers,lz4Block};
+ return {scan,sceneLayers,lz4Block,dxt};
 })();
