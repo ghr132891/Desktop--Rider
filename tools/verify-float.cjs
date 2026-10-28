@@ -103,7 +103,18 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   assert.equal(await page.evaluate(()=>state.floatPerson),false,'new wallpaper clears the cutout');
   await page.locator('#wallpaper-controls .we-trigger').click();await page.locator('.we-item',{hasText:'测试网页'}).click();
   assert.deepEqual(await page.locator('.we-source span').allTextContents(),['预览图（分辨率较低）']);
+  // 7. No directory chooser: picked files, a bare scene.pkg, and a drop of plain files all import.
+  await page.locator('#we-files').setInputFiles(['project.json','scene.pkg','preview.png'].map(f=>path.join(root,'1001',f)));
+  await page.locator('#we-summary').filter({hasText:'找到 1 个壁纸'}).waitFor();assert.match(await page.locator('.we-item').first().textContent(),/测试场景/);
+  await page.locator('#we-files').setInputFiles([path.join(root,'1001','scene.pkg')]);
+  await page.locator('#we-summary').filter({hasText:'找到 1 个壁纸'}).waitFor();await page.locator('.we-item',{hasText:'scene'}).click();await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===4,null,{timeout:30000});
+  await page.locator('#we-files').setInputFiles([path.join(root,'1001','preview.png')]);
+  await page.locator('#we-summary').filter({hasText:'找到 1 个壁纸'}).waitFor();await page.locator('.we-item',{hasText:'preview'}).click();await page.waitForFunction(()=>document.querySelectorAll('.we-source').length===1);
+  assert.deepEqual(await page.locator('.we-source span').allTextContents(),['图片 · 原始分辨率']);
+  await page.evaluate(async files=>{const dt=new DataTransfer();for(const [name,b64] of files)dt.items.add(new File([Uint8Array.from(atob(b64),c=>c.charCodeAt(0))],name));
+   document.querySelector('#we-dialog').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));},[['project.json',fs.readFileSync(path.join(root,'1002','project.json')).toString('base64')],['index.html',Buffer.from('<p>').toString('base64')],['preview.png',png.toString('base64')]]);
+  await page.locator('.we-item',{hasText:'测试网页'}).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('PASS: auto cutout, hole fill, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview; no browser errors.');
+  console.log('PASS: auto cutout, hole fill, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview, file picker / loose files / drop import; no browser errors.');
  }finally{await browser.close();fs.rmSync(fixture,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});

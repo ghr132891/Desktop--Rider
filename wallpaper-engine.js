@@ -21,11 +21,26 @@ const WallpaperEngine = (()=>{
    if(!off||off>o)throw new Error('LZ4 数据损坏');for(let k=0;k<len;k++,o++)dst[o]=dst[o-off];}
   return dst;
  }
- const kinds={scene:'场景',video:'视频',web:'网页',application:'程序'};
- // Group picked files by the folders that contain a project.json.
+ const kinds={scene:'场景',video:'视频',web:'网页',application:'程序',image:'图片'};
+ // Files from a File System Access directory handle, with paths relative to it.
+ async function fromDirectoryHandle(handle,prefix=handle.name+'/',out=[]){
+  for await(const [name,entry] of handle.entries()){if(entry.kind==='file')out.push({file:await entry.getFile(),path:prefix+name});else if(!name.startsWith('.'))await fromDirectoryHandle(entry,prefix+name+'/',out);}
+  return out;
+ }
+ // Files from a drop: folders are walked through webkitGetAsEntry; plain files pass through.
+ async function fromDataTransfer(dt){
+  const entries=[...dt.items||[]].map(item=>item.webkitGetAsEntry?.()).filter(Boolean);if(!entries.length)return [...dt.files];
+  const out=[];const walk=(entry,prefix)=>new Promise(resolve=>{
+   if(entry.isFile)return entry.file(file=>{out.push({file,path:prefix+entry.name});resolve();},()=>resolve());
+   const reader=entry.createReader(),batch=()=>reader.readEntries(async list=>{if(!list.length)return resolve();for(const e of list)await walk(e,prefix+entry.name+'/');batch();},()=>resolve());batch();});
+  for(const entry of entries)await walk(entry,'');return out;
+ }
+ // Group picked files by the folders that contain a project.json. Accepts a FileList,
+ // Files, or {file,path} entries from the helpers above.
  async function scan(fileList){
-  const files=[...fileList].map(file=>({file,path:file.webkitRelativePath||file.name}));
+  const files=[...fileList].map(x=>x instanceof File?{file:x,path:x.webkitRelativePath||x.name}:x);
   const roots=new Set(files.filter(x=>x.path.split('/').pop().toLowerCase()==='project.json').map(x=>x.path.slice(0,-'project.json'.length)));
+  if(!roots.size)return loose(files);
   const groups=new Map([...roots].map(r=>[r,new Map()]));
   for(const x of files){const parts=x.path.split('/');for(let k=parts.length-1;k>=0;k--){const prefix=parts.slice(0,k).join('/')+(k?'/':'');if(roots.has(prefix)){groups.get(prefix).set(parts.slice(k).join('/').toLowerCase(),x.file);break;}}}
   const items=[];
@@ -37,6 +52,16 @@ const WallpaperEngine = (()=>{
    }catch{}
   }
   return items.sort((a,b)=>a.title.localeCompare(b.title,'zh-CN'));
+ }
+ // No project.json among the picked files: treat them as one wallpaper, named after
+ // its scene package, video or picture.
+ function loose(files){
+  const map=new Map(files.map(x=>[x.path.split('/').pop().toLowerCase(),x.file])),names=[...map.keys()];
+  const pkg=names.find(n=>n.endsWith('.pkg')),video=[...map.values()].find(f=>/^video\//.test(f.type)||/\.(mp4|webm|mov|m4v)$/i.test(f.name)),image=[...map.values()].find(f=>/^image\//.test(f.type));
+  if(pkg&&pkg!=='scene.pkg')map.set('scene.pkg',map.get(pkg));
+  const type=pkg?'scene':video?'video':image?'image':'';if(!type)return [];
+  const lead=pkg?map.get(pkg):video||image;
+  return [{id:'picked',title:lead.name.replace(/\.[^.]+$/,'').slice(0,80)||'所选文件',type,kind:kinds[type],files:map,main:video,preview:image}];
  }
  async function pkgEntries(file){
   for(let size=Math.min(file.size,1<<16);;size=Math.min(file.size,size*4)){
@@ -131,5 +156,5 @@ const WallpaperEngine = (()=>{
   let out=c;if((x1-x0)*(y1-y0)>=c.width*c.height*.95&&(x0||y0||x1<c.width||y1<c.height)){out=document.createElement('canvas');out.width=x1-x0;out.height=y1-y0;out.getContext('2d').drawImage(c,-x0,-y0);}
   return {blob:await new Promise(resolve=>out.toBlob(resolve,'image/jpeg',.95)),width:out.width,height:out.height,count:drawn};
  }
- return {scan,sceneLayers,sceneObjects,composeScene,lz4Block,dxt};
+ return {scan,fromDirectoryHandle,fromDataTransfer,sceneLayers,sceneObjects,composeScene,lz4Block,dxt};
 })();

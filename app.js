@@ -285,12 +285,22 @@ $('#cutout-apply').addEventListener('click',()=>{const points=cutDraft.points;if
 let weItems=[],weUrls=[],weItem=null,weChoice=null;
 function weUrl(blob){const url=URL.createObjectURL(blob);weUrls.push(url);return url;}
 $$('.we-trigger').forEach(btn=>btn.addEventListener('click',()=>$('#we-dialog').showModal()));
-$('#we-pick').addEventListener('click',()=>$('#we-folder').click());
+// Native directory picker where available; embedded browsers often lack it, so the
+// classic chooser, a plain multi-file chooser and drag-and-drop are all accepted.
+async function loadWe(list){weUrls.forEach(url=>URL.revokeObjectURL(url));weUrls=[];$('#we-summary').textContent='正在读取壁纸列表…';try{weItems=await WallpaperEngine.scan(list);}catch{weItems=[];}renderWeList();}
+$('#we-pick').addEventListener('click',async()=>{
+ if(window.showDirectoryPicker){try{const handle=await showDirectoryPicker({id:'wallpaper-engine',mode:'read'});$('#we-summary').textContent='正在读取壁纸列表…';return loadWe(await WallpaperEngine.fromDirectoryHandle(handle));}catch(error){if(error?.name==='AbortError')return;}}
+ $('#we-folder').click();});
+$('#we-pick-files').addEventListener('click',()=>$('#we-files').click());
+$('#we-files').addEventListener('change',e=>{const files=[...e.target.files];e.target.value='';if(files.length)loadWe(files);});
+for(const type of ['dragenter','dragover'])$('#we-dialog').addEventListener(type,e=>{e.preventDefault();$('#we-dialog').classList.add('dragging');});
+$('#we-dialog').addEventListener('dragleave',e=>{if(!$('#we-dialog').contains(e.relatedTarget))$('#we-dialog').classList.remove('dragging');});
+$('#we-dialog').addEventListener('drop',async e=>{e.preventDefault();$('#we-dialog').classList.remove('dragging');const list=await WallpaperEngine.fromDataTransfer(e.dataTransfer);if(list.length)loadWe(list);else toast('没有可读取的文件');});
 $('#we-copy-path').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('#we-path').textContent);toast('路径已复制');}catch{toast('无法写入剪贴板，请手动复制路径');}});
-$('#we-folder').addEventListener('change',async e=>{if(!e.target.files.length)return;weUrls.forEach(url=>URL.revokeObjectURL(url));weUrls=[];$('#we-summary').textContent='正在读取壁纸列表…';try{weItems=await WallpaperEngine.scan(e.target.files);}catch{weItems=[];}e.target.value='';renderWeList();});
+$('#we-folder').addEventListener('change',e=>{const files=[...e.target.files];e.target.value='';if(files.length)loadWe(files);});
 function renderWeList(){
  const root=$('#we-list');root.replaceChildren();$('#we-detail').hidden=true;weItem=weChoice=null;$('#we-apply').disabled=true;
- $('#we-summary').textContent=weItems.length?`找到 ${weItems.length} 个壁纸，选择一个查看可用画面。`:'这个文件夹里没有 Wallpaper Engine 壁纸（缺少 project.json）。';
+ $('#we-summary').textContent=weItems.length?`找到 ${weItems.length} 个壁纸，选择一个查看可用画面。`:'这里没有能读取的壁纸：需要包含 project.json 的壁纸文件夹，或 scene.pkg / 视频 / 图片文件。';
  weItems.forEach(item=>{const btn=document.createElement('button');btn.type='button';btn.className='we-item';const img=new Image();img.alt='';if(item.preview)img.src=weUrl(item.preview);const name=document.createElement('strong');name.textContent=item.title;const tag=document.createElement('small');tag.textContent=item.kind;btn.append(img,name,tag);btn.addEventListener('click',()=>{$$('.we-item').forEach(x=>x.classList.toggle('selected',x===btn));openWeItem(item);});root.append(btn);});
 }
 async function openWeItem(item){
@@ -301,7 +311,7 @@ async function openWeItem(item){
  if(item.type==='scene'&&item.files.has('scene.pkg')){$('#we-status').textContent='正在解析场景图层…';
   try{const info=await WallpaperEngine.sceneObjects(item);if(weItem!==item)return;if(info&&info.objects.length>=2)add(`合成画面 · ${info.objects.length} 个图层 · ${info.width}×${info.height}`,{kind:'compose',thumb:item.preview&&weUrl(item.preview)});}catch{if(weItem!==item)return;}
   try{const layers=await WallpaperEngine.sceneLayers(item);if(weItem!==item)return;layers.forEach(layer=>add(`图层 · ${layer.name} · ${layer.width}×${layer.height}`,{kind:'blob',blob:layer.blob,thumb:weUrl(layer.blob)}));}catch{if(weItem!==item)return;}}
- if(item.preview)add('预览图（分辨率较低）',{kind:'blob',blob:item.preview,thumb:weUrl(item.preview)});
+ if(item.preview)add(item.type==='image'?'图片 · 原始分辨率':'预览图（分辨率较低）',{kind:'blob',blob:item.preview,thumb:weUrl(item.preview)});
  $('#we-status').textContent=!options.length?'这个壁纸没有可导入的画面。':item.type==='scene'?'「合成画面」把场景里的图片图层按顺序叠成一张静态图；也可以只取其中一个图层。粒子、动效、文字和脚本不会导入。':item.type==='video'?'视频壁纸导入的是其中一帧静态画面。':'';
  if(options.length)chooseWe(...options[0]);
 }

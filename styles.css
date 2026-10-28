@@ -19,3 +19,7 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 .we-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.we-source{text-align:left;padding:0}.we-source img{width:100%;aspect-ratio:1.6;object-fit:cover;display:block;border-radius:6px;background:#eef2f7;box-shadow:0 0 0 1px #e5eaf2}.we-source.selected img{box-shadow:0 0 0 2px #5888e5}.we-source span{display:block;font-size:10px;color:#6b7a90;margin-top:6px;overflow-wrap:anywhere}
 #we-video-tools{margin-top:14px}#we-video{width:100%;max-height:260px;background:#101826;border-radius:6px;display:block;margin-bottom:10px}#we-video-time{width:100%}
 @media(max-width:760px){.we-list{grid-template-columns:repeat(2,minmax(0,1fr))}.cutout-tools{gap:12px}}
+
+/* Wallpaper Engine dialog: two pickers side by side; drop target highlight */
+.we-pickers{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#we-dialog.dragging{box-shadow:inset 0 0 0 3px var(--accent,#3b6cf4)}
