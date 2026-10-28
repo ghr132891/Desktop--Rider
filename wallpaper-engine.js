@@ -93,5 +93,43 @@ const WallpaperEngine = (()=>{
   }
   return layers;
  }
- return {scan,sceneLayers,lz4Block,dxt};
+ // scene.json may embed scripts with raw control characters; strings in it are also
+ // "x y z" vectors, numbers, or {user,value} property bindings.
+ const lenient=text=>JSON.parse(text.replace(/[\u0000-\u001f]/g,' '));
+ const vec=(v,n)=>typeof v==='string'?v.trim().split(/\s+/).map(Number):Array.isArray(v)?v:typeof v==='number'?Array(n).fill(v):null;
+ const flag=v=>v&&typeof v==='object'?v.value!==false:v!==false;
+ // Image objects in paint order with their textures and placement on the scene canvas.
+ // Particles, text, sounds, effects and util compose layers are not pictures and are skipped.
+ async function sceneObjects(item){
+  const file=item.files.get('scene.pkg');if(!file)return null;
+  const byName=new Map((await pkgEntries(file)).map(e=>[e.name.toLowerCase(),e]));
+  const read=async name=>{const e=byName.get(name.toLowerCase());return e?lenient(decoder.decode(await file.slice(e.offset,e.offset+e.length).arrayBuffer())):null;};
+  const scene=await read('scene.json');if(!scene)return null;
+  const proj=scene.general?.orthogonalprojection||{},width=+proj.width||1920,height=+proj.height||1080,eye=vec(scene.camera?.eye,3)||[0,0,0],clear=vec(scene.general?.clearcolor,3)||[0,0,0],objects=[];
+  for(const ob of scene.objects||[]){
+   if(typeof ob.image!=='string'||!flag(ob.visible)||/^models\/util\//i.test(ob.image))continue;
+   try{const model=await read(ob.image),material=model?.material&&await read(model.material),tex=material?.passes?.[0]?.textures?.find(t=>typeof t==='string'),entry=tex&&byName.get(('materials/'+tex+'.tex').toLowerCase());if(!entry)continue;
+    const origin=vec(ob.origin,3)||[width/2,height/2,0],scale=vec(ob.scale,3)||[1,1,1],size=vec(ob.size,2),angles=vec(ob.angles,3)||[0,0,0];
+    objects.push({entry,x:origin[0]-eye[0],y:height-(origin[1]-eye[1]),w:size&&size[0]*scale[0],h:size&&size[1]*scale[1],scale,angle:angles[2]||0,alpha:typeof ob.alpha==='number'?ob.alpha:1});
+   }catch{}
+  }
+  return {width,height,clear,objects};
+ }
+ // Flat picture of the scene: every image object drawn at its place, static.
+ async function composeScene(item,maxSide=4096){
+  const info=await sceneObjects(item);if(!info||info.objects.length<2)return null;
+  const k=Math.min(1,maxSide/Math.max(info.width,info.height)),c=document.createElement('canvas');c.width=Math.round(info.width*k);c.height=Math.round(info.height*k);
+  const ctx=c.getContext('2d');ctx.fillStyle=`rgb(${info.clear.map(v=>Math.round(v*255)).join(',')})`;ctx.fillRect(0,0,c.width,c.height);ctx.imageSmoothingQuality='high';
+  const file=item.files.get('scene.pkg');let drawn=0,x0=c.width,y0=c.height,x1=0,y1=0;
+  for(const o of info.objects){try{const blob=await texImage(file,o.entry);if(!blob)continue;const bmp=await createImageBitmap(blob);
+   const w=(o.w??bmp.width*o.scale[0])*k,h=(o.h??bmp.height*o.scale[1])*k,cx=o.x*k,cy=o.y*k;ctx.save();ctx.globalAlpha=o.alpha;ctx.translate(cx,cy);ctx.rotate(-o.angle*Math.PI/180);ctx.drawImage(bmp,-w/2,-h/2,w,h);ctx.restore();bmp.close();drawn++;
+   x0=Math.min(x0,cx-w/2);y0=Math.min(y0,cy-h/2);x1=Math.max(x1,cx+w/2);y1=Math.max(y1,cy+h/2);}catch{}}
+  if(drawn<2)return null;
+  // A panned camera can leave a sliver of clear colour along one edge; trim it when
+  // the layers cover almost the whole canvas, otherwise keep the author's framing.
+  x0=Math.max(0,Math.round(x0));y0=Math.max(0,Math.round(y0));x1=Math.min(c.width,Math.round(x1));y1=Math.min(c.height,Math.round(y1));
+  let out=c;if((x1-x0)*(y1-y0)>=c.width*c.height*.95&&(x0||y0||x1<c.width||y1<c.height)){out=document.createElement('canvas');out.width=x1-x0;out.height=y1-y0;out.getContext('2d').drawImage(c,-x0,-y0);}
+  return {blob:await new Promise(resolve=>out.toBlob(resolve,'image/jpeg',.95)),width:out.width,height:out.height,count:drawn};
+ }
+ return {scan,sceneLayers,sceneObjects,composeScene,lz4Block,dxt};
 })();

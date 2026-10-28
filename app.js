@@ -298,9 +298,11 @@ async function openWeItem(item){
  const root=$('#we-sources'),options=[];root.replaceChildren();
  const add=(label,option)=>{const btn=document.createElement('button');btn.type='button';btn.className='we-source';const img=new Image();img.alt='';if(option.thumb)img.src=option.thumb;const span=document.createElement('span');span.textContent=label;btn.append(img,span);btn.addEventListener('click',()=>chooseWe(btn,option));root.append(btn);options.push([btn,option]);};
  if(item.type==='video'&&item.main)add('视频画面 · 拖动下方滑块选择',{kind:'video',file:item.main,thumb:item.preview&&weUrl(item.preview)});
- if(item.type==='scene'&&item.files.has('scene.pkg')){$('#we-status').textContent='正在解析场景图层…';try{const layers=await WallpaperEngine.sceneLayers(item);if(weItem!==item)return;layers.forEach(layer=>add(`图层 · ${layer.name} · ${layer.width}×${layer.height}`,{kind:'blob',blob:layer.blob,thumb:weUrl(layer.blob)}));}catch{if(weItem!==item)return;}}
+ if(item.type==='scene'&&item.files.has('scene.pkg')){$('#we-status').textContent='正在解析场景图层…';
+  try{const info=await WallpaperEngine.sceneObjects(item);if(weItem!==item)return;if(info&&info.objects.length>=2)add(`合成画面 · ${info.objects.length} 个图层 · ${info.width}×${info.height}`,{kind:'compose',thumb:item.preview&&weUrl(item.preview)});}catch{if(weItem!==item)return;}
+  try{const layers=await WallpaperEngine.sceneLayers(item);if(weItem!==item)return;layers.forEach(layer=>add(`图层 · ${layer.name} · ${layer.width}×${layer.height}`,{kind:'blob',blob:layer.blob,thumb:weUrl(layer.blob)}));}catch{if(weItem!==item)return;}}
  if(item.preview)add('预览图（分辨率较低）',{kind:'blob',blob:item.preview,thumb:weUrl(item.preview)});
- $('#we-status').textContent=!options.length?'这个壁纸没有可导入的画面。':item.type==='scene'?'场景壁纸列出了其中最大的图片图层；动态效果和图层叠加不会导入，需要整体画面时可选预览图。':item.type==='video'?'视频壁纸导入的是其中一帧静态画面。':'';
+ $('#we-status').textContent=!options.length?'这个壁纸没有可导入的画面。':item.type==='scene'?'「合成画面」把场景里的图片图层按顺序叠成一张静态图；也可以只取其中一个图层。粒子、动效、文字和脚本不会导入。':item.type==='video'?'视频壁纸导入的是其中一帧静态画面。':'';
  if(options.length)chooseWe(...options[0]);
 }
 function chooseWe(btn,option){
@@ -311,6 +313,7 @@ $('#we-video-time').addEventListener('input',e=>{const video=$('#we-video');if(N
 $('#we-apply').addEventListener('click',async()=>{
  if(!weChoice)return;const button=$('#we-apply');button.disabled=true;
  try{if(weChoice.kind==='video'){const video=$('#we-video');if(video.readyState<2)await new Promise((resolve,reject)=>{video.addEventListener('loadeddata',resolve,{once:true});video.addEventListener('error',()=>reject(new Error('视频无法解码')),{once:true});});if(video.seeking)await new Promise(resolve=>video.addEventListener('seeked',resolve,{once:true}));useImage(video,video.videoWidth,video.videoHeight,weItem.title);}
+  else if(weChoice.kind==='compose'){$('#we-status').textContent='正在合成图层…';const picture=await WallpaperEngine.composeScene(weItem);if(!picture)throw new Error('图层合成失败，可改选单个图层');const bitmap=await createImageBitmap(picture.blob);useImage(bitmap,bitmap.width,bitmap.height,weItem.title);bitmap.close();}
   else{const bitmap=await createImageBitmap(weChoice.blob);useImage(bitmap,bitmap.width,bitmap.height,weItem.title);bitmap.close();}
   $('#we-dialog').close();
  }catch(error){toast('导入失败：'+(error.message||'无法读取这张图片'));}finally{button.disabled=false;}

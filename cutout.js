@@ -52,7 +52,7 @@ const Cutout = (()=>{
  }
  // First guess: the most central confident pixel of the selfie model's person mask.
  async function autoPoint(img,key){
-  const person=await Portrait.detect(img,key);if(person.coverage<.005)return null;
+  const person=await Portrait.detect(img,key);if(person.coverage<.01)return null; // below 1% the selfie model fires on lily pads and arches
   const m=person.mask,d=m.getContext('2d').getImageData(0,0,m.width,m.height).data;let sx=0,sy=0,n=0;
   for(let y=0;y<m.height;y++)for(let x=0;x<m.width;x++)if(d[(y*m.width+x)*4+3]>200){sx+=x;sy+=y;n++;}
   if(!n)return null;const cx=sx/n,cy=sy/n;let best=null,bd=Infinity;
