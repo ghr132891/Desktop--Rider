@@ -9,13 +9,20 @@ https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter
 
 模型下载日期：2026-10-22。仓库内固定文件：`assets/models/selfie_segmenter.tflite`，运行时不追踪 latest。
 
+点选抠图（人物悬浮）使用 Interactive Segmenter 的 MagicTouch 模型：
+https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
+
+模型下载日期：2026-10-28。仓库内固定文件：`assets/models/magic_touch.tflite`。
+
 SHA-256：
 
 ```
 191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b  selfie_segmenter.tflite
+e24338a717c1b7ad8d159666677ef400babb7f33b8ad60c4d96db4ecf694cd25  magic_touch.tflite
 40f4123dfcd75cfa58add046919cc6f52fde66f009ff582997c09ba54c6ba27c  vision_bundle.mjs
 f00ec4731faa23b3e714d00e88d4d10e2df5c0a427d3a2b4ae6e3526fdd14ef7  vision_wasm_internal.wasm
 3821ea9b1f7fb8c549ef2a064ef5c85750bf375c545a49fd6eea0df44a95f1f4  vision_wasm_nosimd_internal.wasm
 ```
 
 官方模型说明：https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter#selfie_segmentation_model
+https://developers.google.com/edge/mediapipe/solutions/vision/interactive_segmenter

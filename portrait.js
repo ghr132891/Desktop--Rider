@@ -4,9 +4,12 @@ const Portrait = (()=>{
  let worker,nextId=0;const pending=new Map(),cache=new Map(),prepared=new Map();
  function stop(error){worker?.terminate();worker=null;for(const job of pending.values()){clearTimeout(job.timer);job.reject(error);}pending.clear();cache.clear();}
  function getWorker(){if(worker)return worker;worker=new Worker('person-worker.js');worker.onmessage=({data})=>{const job=pending.get(data.id);if(!job)return;pending.delete(data.id);clearTimeout(job.timer);data.error?job.reject(new Error(data.error)):job.resolve(data);};worker.onerror=()=>stop(new Error('人物识别暂不可用，请重试'));return worker;}
+ async function ask(img,point){const bitmap=await createImageBitmap(img);return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,point},[bitmap]);});}
+ // Confidence mask of the object under a normalized point (0–1), at model output size.
+ function segmentAt(img,x,y){return ask(img,{x,y});}
  async function detect(img,key){
   if(cache.has(key))return cache.get(key);
-  const task=(async()=>{const bitmap=await createImageBitmap(img);const result=await new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap},[bitmap]);});
+  const task=(async()=>{const result=await ask(img);
    const c=document.createElement('canvas');c.width=result.width;c.height=result.height;const ctx=c.getContext('2d'),pixels=ctx.createImageData(c.width,c.height);let count=0;
    for(let i=0;i<result.values.length;i++){const confidence=result.values[i];const t=Math.max(0,Math.min(1,(confidence-.25)/.5));pixels.data[i*4]=pixels.data[i*4+1]=pixels.data[i*4+2]=255;pixels.data[i*4+3]=Math.round(t*t*(3-2*t)*255);if(confidence>.6)count++;}
    ctx.putImageData(pixels,0,0);return {mask:c,coverage:count/result.values.length};
@@ -58,5 +61,5 @@ const Portrait = (()=>{
   }
   ctx.putImageData(pixels,0,0);return {canvas:out,person};
  }
- return {detect,render,placement,clear(){prepared.clear();}};
+ return {detect,segmentAt,render,placement,clear(){prepared.clear();}};
 })();
