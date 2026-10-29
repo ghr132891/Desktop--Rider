@@ -105,7 +105,10 @@ function placeFloat(){
   el.classList.toggle('flip',copy.flip);el.classList.toggle('shadow',state.floatShadow);el.classList.toggle('active',i===state.floatActive&&state.floatCopies.length>1);if(i===state.floatActive)active=f;});
  const f=active||floatFrame(state,floatView,w,h),n=state.floatCopies.length;
  $('#float-size').value=f.size;$('#float-size-value').textContent=Math.round(f.size)+'%';$('#float-size').style.setProperty('--progress',(f.size-10)/140*100+'%');
- $('#float-copy-label').textContent=n>1?`第 ${state.floatActive+1} / ${n} 份 · 点击画面中的人物切换`:'1 份';$('#float-delete').disabled=n<2;$('#float-up').disabled=state.floatActive>=n-1;$('#float-down').disabled=state.floatActive<=0;$('#float-duplicate').disabled=n>=12;return f;
+ $('#float-copy-label').textContent=n>1?`第 ${state.floatActive+1} / ${n} 份 · 按序号或点击画面中的人物切换`:'1 份';
+ // Numbered buttons reach a copy even when another one covers it in the preview.
+ const list=$('#float-copy-list');list.hidden=n<2;while(list.children.length>n)list.lastElementChild.remove();while(list.children.length<n){const b=document.createElement('button');b.type='button';b.dataset.copy=list.children.length;b.textContent=list.children.length+1;b.title='选中第 '+(list.children.length+1)+' 份';list.append(b);}
+ [...list.children].forEach((b,i)=>{b.classList.toggle('selected',i===state.floatActive);b.setAttribute('aria-pressed',String(i===state.floatActive));});$('#float-delete').disabled=n<2;$('#float-up').disabled=state.floatActive>=n-1;$('#float-down').disabled=state.floatActive<=0;$('#float-duplicate').disabled=n>=12;return f;
 }
 async function renderDesktop(){
  const seq=++renderSequence;const raw=clone(state),s={...raw,protectPerson:raw.protectPerson&&!floating(raw)},desktop=$('#desktop');desktop.style.aspectRatio=String(s.aspect);desktop.style.backgroundColor=s.gapColor;
@@ -273,6 +276,7 @@ $('#float-duplicate').addEventListener('click',()=>{const f=pinFloat();if(!f||st
 $('#float-delete').addEventListener('click',()=>{if(state.floatCopies.length<2)return;state.floatCopies.splice(state.floatActive,1);state.floatActive=Math.min(state.floatActive,state.floatCopies.length-1);updateFloat();});
 const moveCopy=dir=>{const i=state.floatActive,j=i+dir;if(j<0||j>=state.floatCopies.length)return;[state.floatCopies[i],state.floatCopies[j]]=[state.floatCopies[j],state.floatCopies[i]];state.floatActive=j;updateFloat();};
 $('#float-up').addEventListener('click',()=>moveCopy(1));$('#float-down').addEventListener('click',()=>moveCopy(-1));
+$('#float-copy-list').addEventListener('click',event=>{const b=event.target.closest('button[data-copy]');if(!b)return;state.floatActive=Number(b.dataset.copy);placeFloat();updateControls();persistDraft();$$('.float-person')[state.floatActive]?.focus({preventScroll:true});});
 $('#edit-cutout').addEventListener('click',()=>openCutout());
 const floatRoot=$('#float-layers');let floatDrag=null;
 const pickCopy=event=>{const el=event.target.closest('.float-person');if(!el)return null;const i=Number(el.dataset.index);if(state.floatActive!==i){state.floatActive=i;placeFloat();updateControls();}return el;};

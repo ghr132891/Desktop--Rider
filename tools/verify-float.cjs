@@ -77,6 +77,10 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   const both=await page.evaluate(async()=>{const s=clone(state),a=await wallpaperCanvas(s,800),b=await wallpaperCanvas({...s,floatCopies:[s.floatCopies[0]]},800),da=a.getContext('2d').getImageData(0,0,800,500).data,db=b.getContext('2d').getImageData(0,0,800,500).data;let diff=0;for(let i=0;i<da.length;i+=4)if(Math.abs(da[i]-db[i])>8)diff++;return diff;});
   assert.ok(both>500,'export draws the second copy: '+both);
   await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'clicking a copy makes it active');
+  // Numbered selector reaches a copy hidden behind another one.
+  await page.evaluate(()=>{state.floatCopies[1]={...state.floatCopies[0]};placeFloat();});assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('#float-copy-list button')].map(b=>[b.textContent,b.classList.contains('selected')])),[['1',false],['2',true]]);
+  await page.locator('#float-copy-list button[data-copy="0"]').click();assert.deepEqual(await page.evaluate(()=>[state.floatActive,document.activeElement.className.includes('float-person'),document.querySelector('#float-copy-label').textContent.startsWith('第 1 / 2 份')]),[0,true,true]);
+  await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'the covering copy still takes clicks');
   await page.locator('#float-delete').click();await page.waitForFunction(()=>document.querySelectorAll('.float-person').length===1);assert.equal(await page.evaluate(()=>state.floatCopies.length),1);
 
   // 5. Cutout dialog: removing a region shrinks the selection.
