@@ -122,8 +122,9 @@ async function renderDesktop(){
  ['#piece-left','#piece-right'].forEach((id,i)=>{const el=$(id),points=geo.polygons[i];el.style.display=points.length?'block':'none';el.style.clipPath='polygon('+points.map(p=>`${p[0]}px ${p[1]}px`).join(',')+')';});
  $('#split-handle').hidden=s.mode==='single';$('#split-handle').style.left=s.ratio+'%';$('#split-handle').style.top=(s.anchorY??50)+'%';
  ['#split-start','#split-end'].forEach((id,i)=>{const el=$(id),p=geo.endpoints[i];el.hidden=s.mode==='single'||!p;if(p){el.style.left=Math.max(8,Math.min(w-8,p[0]))+'px';el.style.top=Math.max(8,Math.min(h-8,p[1]))+'px';}});
- $('#desktop-zones').hidden=!s.showIcons;$('.desktop-dock').hidden=!s.showIcons;$('.desktop-greeting').hidden=s.protectPerson||floating(s)||!s.showIcons;
- $('#toggle-icons').textContent=s.showIcons?'隐藏桌面图标':'显示桌面图标';
+ // Clean desktop: everything that is not wallpaper (zones, dock, top bar, greeting, caption) flies off; see styles.css.
+ desktop.classList.toggle('clean',!s.showIcons);$('.desktop-greeting').hidden=s.protectPerson||floating(s);
+ $('#toggle-icons').textContent=s.showIcons?'隐藏桌面，只看壁纸':'显示桌面';
  $('#desktop-caption').textContent=s.customImage?'我的壁纸':wallpapers.find(x=>x.id===s.wallpaper).name;
  $('#resolution-label').textContent=`1600 × ${Math.round(1600/s.aspect)}`;
  for(const m of Rider.modules)Rider.call(m,'render',{s,w,h,layer:m.layer,api:Rider.api});
@@ -178,7 +179,7 @@ function moveItem(itemId,zoneId){const item=state.items.find(x=>x.id===itemId);i
 function renderZones(){
  const root=$('#desktop-zones');root.replaceChildren();
  state.zones.forEach(zone=>{
- const box=document.createElement('section');box.className='desktop-zone';box.dataset.zone=zone.id;box.setAttribute('aria-label',zone.name+'收纳分区');box.classList.toggle('collapsed',zone.collapsed);box.style.left=zone.x+'%';box.style.top=zone.y+'%';
+ const box=document.createElement('section');box.className='desktop-zone';box.dataset.zone=zone.id;box.setAttribute('aria-label',zone.name+'收纳分区');box.classList.toggle('collapsed',zone.collapsed);box.style.left=zone.x+'%';box.style.top=zone.y+'%';box.style.setProperty('--fly',zone.x<50?-1:1); // flies toward its nearer edge when the desktop is hidden
  const heading=document.createElement('div');heading.className='zone-heading';heading.append(icon('folder'));const title=document.createElement('span');title.textContent=zone.name;heading.append(title);
  const count=document.createElement('small');count.className='zone-count';count.textContent=state.items.filter(i=>i.zone===zone.id).length;heading.append(count);
  // The heading is the handle: drag to move the zone, click (or Enter) to fold it into a bubble.
@@ -229,7 +230,9 @@ $('#linked').addEventListener('change',e=>{state.linked=e.target.checked;update(
 $('#gap-color').addEventListener('input',e=>{state.gapColor=e.target.value;update();});
 $('#aspect').addEventListener('change',e=>{state.aspect=Number(e.target.value);update();});
 $('#wallpaper-scale').addEventListener('input',e=>{state.scale=Number(e.target.value);update();});
-$('#toggle-icons').addEventListener('click',()=>{state.showIcons=!state.showIcons;update({custom:false});});
+$('#toggle-icons').addEventListener('click',()=>{state.showIcons=!state.showIcons;update({custom:false});if(!state.showIcons)toast('桌面元素已隐藏，点击壁纸即可恢复');});
+// Like macOS: with the desktop hidden, a click on the bare wallpaper brings everything back.
+$('#desktop').addEventListener('click',e=>{if(state.showIcons||pickingSplit||e.target.closest('.float-person,.split-handle,.split-endpoint,.module-layer,#float-outline'))return;state.showIcons=true;update({custom:false});});
 $('#reset').addEventListener('click',()=>{state=clone(defaults);update({zones:true,custom:false});toast('已恢复初始桌面');});
 $('#fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('#preview-stage').requestFullscreen();}catch{toast('当前浏览器不支持全屏预览');}});
 $('#help').addEventListener('click',()=>$('#help-dialog').showModal());

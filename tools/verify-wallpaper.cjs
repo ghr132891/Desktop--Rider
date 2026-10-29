@@ -37,6 +37,7 @@ const assert=require('node:assert/strict');
  }
  assert(results.joins,'Equal halves with no gap must reconstruct the original picture');assert.equal(results.holes,0,'No uncovered wallpaper inside extreme-angle panes');
  await page.addStyleTag({content:'.desktop-top,.desktop-greeting,.desktop-zones,.desktop-dock,.desktop-caption,.split-handle{visibility:hidden!important}'});
+ await page.waitForFunction(()=>['.desktop-top','.desktop-greeting','.desktop-dock','.desktop-caption'].every(q=>getComputedStyle(document.querySelector(q)).visibility==='hidden')); // the clean-desktop fade delays visibility
  const preview=PNG.sync.read(await page.locator('#desktop').screenshot());
  const exported=await page.evaluate(async()=>{const w=document.querySelector('#desktop').clientWidth;return (await wallpaperCanvas(state,w)).toDataURL();});
  const png=PNG.sync.read(Buffer.from(exported.split(',')[1],'base64'));

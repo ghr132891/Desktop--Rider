@@ -32,7 +32,7 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 #float-layers{display:contents}#float-outline{position:absolute;z-index:16;pointer-events:none;border:2px dashed #ffffffb3;outline:1px solid #0b182c33;border-radius:3px;margin:-2px}
 /* Zones: positioned from state; the heading is the drag handle. Folding clips the zone down to a
    bubble around the folder icon and count while the icons tip away in 3D. */
-.desktop-zone{--bw:52px;--bh:36px;clip-path:inset(0 0 0 0 round 7px);transition:clip-path .55s cubic-bezier(.2,.8,.2,1),background .35s,box-shadow .25s}
+.desktop-zone{--bw:52px;--bh:36px;clip-path:inset(0 0 0 0 round 7px);transition:clip-path .55s cubic-bezier(.2,.8,.2,1),background .35s,box-shadow .25s,transform .5s cubic-bezier(.3,.8,.3,1),opacity .4s,visibility 0s}
 .desktop-zone.collapsed{clip-path:inset(0 calc(100% - var(--bw)) calc(100% - var(--bh)) 0 round 18px);background:#dce9ff66;border-color:#ffffff80}.collapsed .zone-count{color:#fff;font-weight:600}
 .desktop-zone.dragging{box-shadow:0 16px 32px #0b182c66;transition:box-shadow .25s}.desktop-zone.dragging .zone-heading{cursor:grabbing}
 .zone-heading{cursor:grab;user-select:none;touch-action:none}.zone-heading:focus-visible{outline:2px dashed #fff;outline-offset:2px;border-radius:4px}
@@ -44,6 +44,13 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 /* Stacking inside the desktop: wallpaper -1 · modules below the person 2 · person copies 3–14 ·
    selection outline 16 · modules above the person 18 · desktop UI (zones, dock, top bar) 20 ·
    split guide and handles 29–31 · split picker 40. */
+/* Clean desktop (#toggle-icons / state.showIcons=false): everything but the wallpaper flies off —
+   top bar up, dock down, zones toward their nearer edge — and is removed from hit testing once gone.
+   A click on the bare wallpaper brings it back (app.js). */
+.desktop-top,.desktop-greeting,.desktop-dock,.desktop-caption{transition:transform .5s cubic-bezier(.3,.8,.3,1),opacity .4s,visibility 0s}
+.desktop.clean :is(.desktop-top,.desktop-greeting,.desktop-dock,.desktop-caption){opacity:0;visibility:hidden;pointer-events:none;transition-delay:0s,0s,.5s}
+.desktop.clean .desktop-zone{opacity:0;visibility:hidden;pointer-events:none;transition-delay:0s,0s,0s,0s,0s,.5s;transform:translateX(calc(var(--fly,1)*70px)) scale(.9)}
+.desktop.clean .desktop-top{transform:translateY(-110%)}.desktop.clean .desktop-dock{transform:translate(-50%,170%)}.desktop.clean .desktop-greeting{transform:translateX(-40px)}.desktop.clean .desktop-caption{transform:translateY(20px)}
 /* Modules (core.js): sidebar entries join the nav grid; each desktop layer covers the desktop
    but only its own children take pointer events, so split handles stay reachable. */
 #module-nav{display:contents}#module-layers{display:contents}.module-layer{position:absolute;inset:0;pointer-events:none}.module-layer>*{pointer-events:auto}.module-page{margin-top:28px}

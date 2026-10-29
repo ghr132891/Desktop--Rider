@@ -32,6 +32,11 @@ const fs=require('node:fs');
  await page.locator('[data-zone="work"] .zone-heading').focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>state.zones[0].collapsed),false);await page.keyboard.press('Shift+ArrowLeft');assert.equal(await page.evaluate(()=>state.zones[0].x),Math.round((zoneAfter.x-5)*10)/10);
  await page.locator('[data-zone="work"] .zone-heading').click();await page.reload();assert.deepEqual(await page.evaluate(()=>[state.zones[0].collapsed,state.zones[0].x,document.querySelector('[data-zone="work"]').classList.contains('collapsed')]),[true,Math.round((zoneAfter.x-5)*10)/10,true]);
  await page.locator('[data-view="manage"]').click();await page.locator('#zone-layout-reset').click();assert.deepEqual(await page.evaluate(()=>state.zones.map(z=>[z.x,z.y,z.collapsed])),[[6.5,48,false],[66,24,false],[66,56,false]]);
+ // Clean desktop: chrome flies off and stops taking clicks; a click on the wallpaper restores it.
+ await page.locator('#toggle-icons').click();assert.equal(await page.evaluate(()=>state.showIcons),false);await page.waitForFunction(()=>document.querySelector('#desktop').classList.contains('clean'));
+ await page.waitForFunction(()=>['.desktop-top','.desktop-dock','.desktop-zone','.desktop-caption'].every(q=>getComputedStyle(document.querySelector(q)).visibility==='hidden'));
+ assert.equal(await page.locator('#toggle-icons').textContent(),'显示桌面');const db=await page.locator('#desktop').boundingBox();await page.mouse.click(db.x+db.width*.3,db.y+db.height*.12);
+ assert.equal(await page.evaluate(()=>state.showIcons),true);await page.waitForFunction(()=>getComputedStyle(document.querySelector('.desktop-dock')).visibility==='visible');
  assert.deepEqual(await page.evaluate(()=>normalizeState({...state,zones:[{id:'a',name:'A',x:500,y:-3,collapsed:'yes'},{id:'b',name:'B'}]}).zones),[{id:'a',name:'A',x:71,y:0,collapsed:false},{id:'b',name:'B',x:66,y:24,collapsed:false}]);
  await page.locator('[data-view="wallpaper"]').click();await page.locator('[data-wallpaper="forest"]').click();await range('wallpaper-scale',125);
  await page.locator('#save').click();await page.locator('#scheme-name').fill('验证方案');await page.locator('#save-form button[type="submit"]').click();await page.waitForFunction(()=>!document.querySelector('#save-dialog').open);

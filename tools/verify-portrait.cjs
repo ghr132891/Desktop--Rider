@@ -31,6 +31,7 @@ const fs=require('node:fs');
  assert.equal(await page.locator('#ratio').inputValue(),'20');assert.equal(await page.locator('#anchor-y').inputValue(),'30');
  await page.locator('#split-handle').focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Shift+ArrowLeft');
  assert.equal(await page.locator('#ratio').inputValue(),'15');assert.equal(await page.locator('#anchor-y').inputValue(),'29');
+ await page.waitForFunction(()=>document.querySelector('#split-handle').style.left===state.ratio+'%'); // the handle moves on the next render frame
  const hb=await page.locator('#split-handle').boundingBox();await page.mouse.move(hb.x+hb.width/2,hb.y+hb.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.8,box.y+box.height*.7);await page.mouse.up();
  assert.equal(await page.locator('#ratio').inputValue(),'80');assert.equal(await page.locator('#anchor-y').inputValue(),'70');
  const end=await page.locator('#split-start').boundingBox(),oldAngle=await page.locator('#angle').inputValue();await page.mouse.move(end.x+end.width/2,end.y+end.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.5,box.y+box.height*.05);await page.mouse.up();assert.notEqual(await page.locator('#angle').inputValue(),oldAngle);
