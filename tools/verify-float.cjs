@@ -76,11 +76,20 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   await page.locator('#float-down').click();assert.equal(await page.evaluate(()=>state.floatActive),0,'moving down swaps order and follows the copy');
   const both=await page.evaluate(async()=>{const s=clone(state),a=await wallpaperCanvas(s,800),b=await wallpaperCanvas({...s,floatCopies:[s.floatCopies[0]]},800),da=a.getContext('2d').getImageData(0,0,800,500).data,db=b.getContext('2d').getImageData(0,0,800,500).data;let diff=0;for(let i=0;i<da.length;i+=4)if(Math.abs(da[i]-db[i])>8)diff++;return diff;});
   assert.ok(both>500,'export draws the second copy: '+both);
-  await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'clicking a copy makes it active');
+  await page.evaluate(()=>{Object.assign(state.floatCopies[0],{x:-20,y:-20,size:10});placeFloat();});await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'clicking a copy makes it active');
   // Numbered selector reaches a copy hidden behind another one.
-  await page.evaluate(()=>{state.floatCopies[1]={...state.floatCopies[0]};placeFloat();});assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('#float-copy-list button')].map(b=>[b.textContent,b.classList.contains('selected')])),[['1',false],['2',true]]);
+  await page.evaluate(()=>{Object.assign(state.floatCopies[0],{x:50,y:50,size:60});state.floatCopies[1]={...state.floatCopies[0]};placeFloat();});assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('#float-copy-list button')].map(b=>[b.textContent,b.classList.contains('selected')])),[['1',false],['2',true]]);
   await page.locator('#float-copy-list button[data-copy="0"]').click();assert.deepEqual(await page.evaluate(()=>[state.floatActive,document.activeElement.className.includes('float-person'),document.querySelector('#float-copy-label').textContent.startsWith('第 1 / 2 份')]),[0,true,true]);
-  await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'the covering copy still takes clicks');
+  assert(await page.locator('#float-outline').isVisible(),'selection outline shown above the copies');
+  // Dragging where the selected copy is opaque moves it, even though copy 2 covers it. The point is the
+  // first opaque pixel below the centre that is not under the split handle.
+  const spot=await page.evaluate(()=>{const d=document.querySelector('#desktop'),b=d.getBoundingClientRect();for(let dy=0;dy<b.height/2;dy+=6){const x=b.width/2,y=b.height/2+dy;if(copyHit(state.floatCopies[0],x,y,b.width,b.height)&&document.elementFromPoint(b.left+x,b.top+y)?.classList.contains('float-person'))return {x:b.left+x,y:b.top+y};}return null;});
+  assert(spot,'an opaque, reachable point on the covered copy');const prior=await page.evaluate(()=>clone(state.floatCopies));
+  await page.mouse.move(spot.x,spot.y);await page.mouse.down();await page.mouse.move(spot.x-60,spot.y-40,{steps:4});await page.mouse.up();
+  const dragged=await page.evaluate(()=>({active:state.floatActive,copies:clone(state.floatCopies)}));assert.equal(dragged.active,0,'selection sticks while dragging the covered copy');
+  assert(dragged.copies[0].x<prior[0].x-2&&dragged.copies[1].x===prior[1].x,'only the selected copy moved');
+  const spot2=await page.evaluate(()=>{Object.assign(state.floatCopies[0],{x:-20,y:-20,size:10});placeFloat();const b=document.querySelector('#desktop').getBoundingClientRect();for(let dy=0;dy<b.height/2;dy+=6){const x=b.width/2,y=b.height/2+dy;if(copyHit(state.floatCopies[1],x,y,b.width,b.height)&&document.elementFromPoint(b.left+x,b.top+y)?.classList.contains('float-person'))return {x:b.left+x,y:b.top+y};}return null;});
+  assert(spot2);await page.mouse.click(spot2.x,spot2.y);assert.equal(await page.evaluate(()=>state.floatActive),1,'clicking where only the top copy is opaque selects it');
   await page.locator('#float-delete').click();await page.waitForFunction(()=>document.querySelectorAll('.float-person').length===1);assert.equal(await page.evaluate(()=>state.floatCopies.length),1);
 
   // 5. Cutout dialog: removing a region shrinks the selection.

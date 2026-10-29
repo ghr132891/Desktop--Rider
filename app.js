@@ -96,7 +96,7 @@ function syncSplitGuide(s,w,h,geo){const line=$('#split-guide-line');$('#split-g
 // Positions every copy from state alone, so dragging skips the wallpaper pipeline.
 function placeFloat(){
  const root=$('#float-layers'),desktop=$('#desktop'),w=desktop.clientWidth,h=desktop.clientHeight;
- if(!floatView?.cut||!floating(state)||floatView.key!==sceneKey(state)||!w){root.replaceChildren();return null;}
+ if(!floatView?.cut||!floating(state)||floatView.key!==sceneKey(state)||!w){root.replaceChildren();$('#float-outline').hidden=true;return null;}
  while(root.children.length>state.floatCopies.length)root.lastElementChild.remove();
  while(root.children.length<state.floatCopies.length){const el=document.createElement('img');el.className='float-person';el.alt='悬浮人物，可拖动；方向键移动，加减号缩放';el.title='拖动移动；滚轮或 +/− 调整大小';el.draggable=false;el.tabIndex=0;root.append(el);}
  let active=null;
@@ -104,6 +104,8 @@ function placeFloat(){
   const f=floatFrame(state,floatView,w,h,copy);Object.assign(el.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px',zIndex:3+i});el.style.setProperty('--shadow-y',w*.005+'px');el.style.setProperty('--shadow-blur',w*.006+'px');
   el.classList.toggle('flip',copy.flip);el.classList.toggle('shadow',state.floatShadow);el.classList.toggle('active',i===state.floatActive&&state.floatCopies.length>1);if(i===state.floatActive)active=f;});
  const f=active||floatFrame(state,floatView,w,h),n=state.floatCopies.length;
+ // Selection outline sits above every copy, so the selected one shows through the ones covering it.
+ const outline=$('#float-outline');outline.hidden=n<2;Object.assign(outline.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px'});
  $('#float-size').value=f.size;$('#float-size-value').textContent=Math.round(f.size)+'%';$('#float-size').style.setProperty('--progress',(f.size-10)/140*100+'%');
  $('#float-copy-label').textContent=n>1?`第 ${state.floatActive+1} / ${n} 份 · 按序号或点击画面中的人物切换`:'1 份';
  // Numbered buttons reach a copy even when another one covers it in the preview.
@@ -126,7 +128,7 @@ async function renderDesktop(){
  const keepPortrait=s.protectPerson&&portraitFrameSource===key&&portraitLayer.width===w&&portraitLayer.height===h;
  portraitLayer.hidden=!keepPortrait;
  if(keepPortrait){$('#piece-left').style.display='none';$('#piece-right').style.display='none';}
- if(!floating(s))$('#float-layers').replaceChildren();else if(floatView?.key!==key)$('#float-status').textContent='正在本机抠出人物并补全背景…';
+ if(!floating(s)){$('#float-layers').replaceChildren();$('#float-outline').hidden=true;}else if(floatView?.key!==key)$('#float-status').textContent='正在本机抠出人物并补全背景…';
  try{const view=await scene(s);if(seq!==renderSequence)return;
  floatView=view.cut?{...view,key}:null;
  if(floating(s)){placeFloat();$('#float-status').textContent=view.cut?'人物已抠出 · 直接拖动画面中的人物，滚轮调整大小':'没有选中任何区域，请调整抠图范围';}
@@ -279,7 +281,14 @@ $('#float-up').addEventListener('click',()=>moveCopy(1));$('#float-down').addEve
 $('#float-copy-list').addEventListener('click',event=>{const b=event.target.closest('button[data-copy]');if(!b)return;state.floatActive=Number(b.dataset.copy);placeFloat();updateControls();persistDraft();$$('.float-person')[state.floatActive]?.focus({preventScroll:true});});
 $('#edit-cutout').addEventListener('click',()=>openCutout());
 const floatRoot=$('#float-layers');let floatDrag=null;
-const pickCopy=event=>{const el=event.target.closest('.float-person');if(!el)return null;const i=Number(el.dataset.index);if(state.floatActive!==i){state.floatActive=i;placeFloat();updateControls();}return el;};
+// Opaque pixel of this copy under the pointer? Transparent parts of the cutout do not count.
+function copyHit(copy,x,y,w,h){const f=floatFrame(state,floatView,w,h,copy);if(x<f.left||y<f.top||x>f.left+f.w||y>f.top+f.h)return false;const c=floatView.cut.cutout;let px=(x-f.left)/f.w;if(copy.flip)px=1-px;const py=(y-f.top)/f.h;return c.getContext('2d').getImageData(Math.min(c.width-1,px*c.width|0),Math.min(c.height-1,py*c.height|0),1,1).data[3]>24;}
+// The selected copy keeps the pointer where it is opaque, even under another copy; otherwise the
+// topmost opaque copy under the pointer; otherwise the element itself (fully transparent spot).
+const pickCopy=event=>{const el=event.target.closest('.float-person');if(!el)return null;let i=Number(el.dataset.index);
+ if(floatView?.cut){const b=$('#desktop').getBoundingClientRect(),x=event.clientX-b.left,y=event.clientY-b.top,copies=state.floatCopies;
+  if(copyHit(copies[state.floatActive],x,y,b.width,b.height))i=state.floatActive;else for(let k=copies.length-1;k>=0;k--)if(copyHit(copies[k],x,y,b.width,b.height)){i=k;break;}}
+ if(state.floatActive!==i){state.floatActive=i;placeFloat();updateControls();}return $$('.float-person')[i]||el;};
 floatRoot.addEventListener('pointerdown',event=>{const el=pickCopy(event);if(!el)return;const f=pinFloat();if(!f)return;const b=$('#desktop').getBoundingClientRect();floatDrag={pointerId:event.pointerId,el,dx:event.clientX-b.left-f.x/100*b.width,dy:event.clientY-b.top-f.y/100*b.height};el.setPointerCapture(event.pointerId);el.classList.add('dragging');event.preventDefault();});
 floatRoot.addEventListener('pointermove',event=>{if(floatDrag?.pointerId!==event.pointerId)return;const b=$('#desktop').getBoundingClientRect(),c=activeCopy(state);c.x=clampFloat((event.clientX-b.left-floatDrag.dx)/b.width*100);c.y=clampFloat((event.clientY-b.top-floatDrag.dy)/b.height*100);updateFloat();});
 const endFloatDrag=()=>{floatDrag?.el.classList.remove('dragging');floatDrag=null;};
