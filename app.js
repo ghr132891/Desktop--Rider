@@ -9,7 +9,7 @@ const wallpapers = [
   {id:'sand',name:'旷野回声',tone:'沙岩',src:'assets/sand.svg'},
   {id:'portrait',name:'林间人像',tone:'人像实拍',src:'assets/portrait-wallpaper.jpg'}
 ];
-const defaults = {floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间',x:6.5,y:48,collapsed:false},{id:'life',name:'日常灵感',x:66,y:24,collapsed:false}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
+const defaults = {floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间',x:6.5,y:48},{id:'life',name:'日常灵感',x:66,y:24}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
 defaults.modules=Rider.moduleDefaults(); // one slice per registered module (core.js)
 const presets = [
  {id:'focus',name:'专注斜切',desc:'灵感与效率并行',mode:'diagonal',angle:15,ratio:58,gap:16,wallpaper:'mountain'},
@@ -24,8 +24,8 @@ function normalizeState(input){const s={...clone(defaults),...input};
  const clamp=(value,min,max,fallback)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
  s.ratio=clamp(s.ratio,1,99,58);s.angle=clamp(s.angle,-80,80,15);s.anchorY=clamp(s.anchorY,1,99,50);s.sourceRatio=clamp(s.sourceRatio,5,95,50);s.focusX=clamp(s.focusX,0,100,50);s.focusY=clamp(s.focusY,0,100,50);s.gap=clamp(s.gap,0,60,16);s.scale=clamp(s.scale,100,160,100);
  s.protectPerson=typeof input.protectPerson==='boolean'?input.protectPerson:input.wallpaper==='portrait';
- // Zones carry their own desktop position (% of the desktop, top-left corner) and folded state.
- s.zones=s.zones.map((z,i)=>({id:z.id,name:z.name,x:clamp(z.x,0,71,zoneSlot(i)[0]),y:clamp(z.y,0,92,zoneSlot(i)[1]),collapsed:z.collapsed===true}));
+ // Zones carry their own desktop position (% of the desktop, top-left corner).
+ s.zones=s.zones.map((z,i)=>({id:z.id,name:z.name,x:clamp(z.x,0,71,zoneSlot(i)[0]),y:clamp(z.y,0,92,zoneSlot(i)[1])}));
  s.floatPoints=Array.isArray(s.floatPoints)?s.floatPoints.filter(p=>p&&[p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=1)).slice(0,24).map(p=>({x:p.x,y:p.y,add:p.add!==false})):[];
  s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatShadow=s.floatShadow!==false;s.floatKeepOriginal=s.floatKeepOriginal===true;
  // Copies of the cutout in z-order (last on top); drafts from before copies existed carry one in floatX/Y/Size/Flip.
@@ -179,20 +179,19 @@ function moveItem(itemId,zoneId){const item=state.items.find(x=>x.id===itemId);i
 function renderZones(){
  const root=$('#desktop-zones');root.replaceChildren();
  state.zones.forEach(zone=>{
- const box=document.createElement('section');box.className='desktop-zone';box.dataset.zone=zone.id;box.setAttribute('aria-label',zone.name+'收纳分区');box.classList.toggle('collapsed',zone.collapsed);box.style.left=zone.x+'%';box.style.top=zone.y+'%';box.style.setProperty('--fly',zone.x<50?-1:1); // flies toward its nearer edge when the desktop is hidden
+ const box=document.createElement('section');box.className='desktop-zone';box.dataset.zone=zone.id;box.setAttribute('aria-label',zone.name+'收纳分区');box.style.left=zone.x+'%';box.style.top=zone.y+'%';box.style.setProperty('--fly',zone.x<50?-1:1); // flies toward its nearer edge when the desktop is hidden
  const heading=document.createElement('div');heading.className='zone-heading';heading.append(icon('folder'));const title=document.createElement('span');title.textContent=zone.name;heading.append(title);
  const count=document.createElement('small');count.className='zone-count';count.textContent=state.items.filter(i=>i.zone===zone.id).length;heading.append(count);
- // The heading is the handle: drag to move the zone, click (or Enter) to fold it into a bubble.
- heading.tabIndex=0;heading.setAttribute('role','button');heading.setAttribute('aria-expanded',String(!zone.collapsed));heading.title='拖动移动分区；点击收起 / 展开';
- const fold=()=>{zone.collapsed=!zone.collapsed;box.classList.toggle('collapsed',zone.collapsed);heading.setAttribute('aria-expanded',String(!zone.collapsed));persistDraft();};
+ // The heading is the handle: drag to move the zone; a plain click (or Enter) hides the whole desktop, like macOS.
+ heading.tabIndex=0;heading.setAttribute('role','button');heading.title='拖动移动分区；点击隐藏桌面，只看壁纸';
  const place=()=>{box.style.left=zone.x+'%';box.style.top=zone.y+'%';};let zd=null;
  heading.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;const b=$('#desktop').getBoundingClientRect();zd={id:e.pointerId,sx:e.clientX,sy:e.clientY,x:zone.x,y:zone.y,w:b.width,h:b.height,moved:false};heading.setPointerCapture(e.pointerId);e.preventDefault();});
  heading.addEventListener('pointermove',e=>{if(zd?.id!==e.pointerId)return;const dx=e.clientX-zd.sx,dy=e.clientY-zd.sy;if(!zd.moved&&Math.hypot(dx,dy)<4)return;zd.moved=true;box.classList.add('dragging');zone.x=clampZone(zd.x+dx/zd.w*100,71);zone.y=clampZone(zd.y+dy/zd.h*100,92);place();});
- const endZone=e=>{if(zd?.id!==e.pointerId)return;const moved=zd.moved;zd=null;box.classList.remove('dragging');if(moved)persistDraft();else fold();};
+ const endZone=e=>{if(zd?.id!==e.pointerId)return;const moved=zd.moved;zd=null;box.classList.remove('dragging');if(moved)persistDraft();else hideDesktop();};
  heading.addEventListener('pointerup',endZone);heading.addEventListener('pointercancel',endZone);heading.addEventListener('lostpointercapture',()=>{zd=null;box.classList.remove('dragging');});
  heading.addEventListener('keydown',e=>{const step=e.shiftKey?5:1,moves={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
   if(moves[e.key]){e.preventDefault();zone.x=clampZone(zone.x+moves[e.key][0],71);zone.y=clampZone(zone.y+moves[e.key][1],92);place();persistDraft();}
-  else if(e.key==='Enter'||e.key===' '){e.preventDefault();fold();}});
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();hideDesktop();}});
  if(currentView==='manage'&&state.zones.length>1){const remove=document.createElement('button');remove.className='zone-delete';remove.textContent='×';remove.setAttribute('aria-label','删除'+zone.name+'分区');remove.addEventListener('click',()=>{const other=state.zones.find(z=>z.id!==zone.id);if(state.items.filter(i=>i.zone===zone.id||i.zone===other.id).length>6){toast('请先将部分快捷项移到其他分区，再删除此分区');return;}state.items.forEach(i=>{if(i.zone===zone.id)i.zone=other.id;});state.zones=state.zones.filter(z=>z.id!==zone.id);update({zones:true,custom:false});toast('分区已移除，快捷项已移至'+other.name);});heading.append(remove);}
  box.append(heading);const items=document.createElement('div');items.className='zone-items';
  state.items.filter(i=>i.zone===zone.id).forEach(item=>{const el=document.createElement('button');el.className='desktop-item';el.draggable=true;el.dataset.item=item.id;el.setAttribute('aria-label',item.name+'，按 Enter 移至下一个分区');el.title='拖动以整理；按 Enter 移至下一个分区';const art=document.createElement('span');art.className='item-art '+item.kind;art.append(icon(item.kind));const label=document.createElement('span');label.textContent=item.name;el.append(art,label);el.addEventListener('dragstart',event=>{event.dataTransfer.setData('text/plain',item.id);event.dataTransfer.effectAllowed='move';});el.addEventListener('click',()=>{const index=state.zones.findIndex(z=>z.id===item.zone);const next=state.zones[(index+1)%state.zones.length];moveItem(item.id,next.id);$(`[data-item="${item.id}"]`)?.focus();toast('已移至'+next.name);});items.append(el);});
@@ -230,9 +229,15 @@ $('#linked').addEventListener('change',e=>{state.linked=e.target.checked;update(
 $('#gap-color').addEventListener('input',e=>{state.gapColor=e.target.value;update();});
 $('#aspect').addEventListener('change',e=>{state.aspect=Number(e.target.value);update();});
 $('#wallpaper-scale').addEventListener('input',e=>{state.scale=Number(e.target.value);update();});
-$('#toggle-icons').addEventListener('click',()=>{state.showIcons=!state.showIcons;update({custom:false});if(!state.showIcons)toast('桌面元素已隐藏，点击壁纸即可恢复');});
-// Like macOS: with the desktop hidden, a click on the bare wallpaper brings everything back.
-$('#desktop').addEventListener('click',e=>{if(state.showIcons||pickingSplit||e.target.closest('.float-person,.split-handle,.split-endpoint,.module-layer,#float-outline'))return;state.showIcons=true;update({custom:false});});
+// Clean desktop, like macOS: hide everything but the wallpaper (footer button, a click on any zone
+// heading, or a double-click on the bare wallpaper); one click on the wallpaper brings it all back.
+let desktopShownAt=0;
+function hideDesktop(){if(!state.showIcons)return;state.showIcons=false;update({custom:false});toast('桌面元素已隐藏，点一下壁纸即可恢复');}
+function showDesktop(){if(state.showIcons)return;state.showIcons=true;desktopShownAt=Date.now();update({custom:false});}
+$('#toggle-icons').addEventListener('click',()=>state.showIcons?hideDesktop():showDesktop());
+const bareWallpaper=e=>!pickingSplit&&!e.target.closest('.float-person,.split-handle,.split-endpoint,.module-layer,#float-outline,.desktop-zone,.desktop-dock,.desktop-top');
+$('#desktop').addEventListener('click',e=>{if(!state.showIcons&&bareWallpaper(e))showDesktop();});
+$('#desktop').addEventListener('dblclick',e=>{if(state.showIcons&&Date.now()-desktopShownAt>600&&bareWallpaper(e))hideDesktop();}); // not the double-click that just restored it
 $('#reset').addEventListener('click',()=>{state=clone(defaults);update({zones:true,custom:false});toast('已恢复初始桌面');});
 $('#fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('#preview-stage').requestFullscreen();}catch{toast('当前浏览器不支持全屏预览');}});
 $('#help').addEventListener('click',()=>$('#help-dialog').showModal());
@@ -245,12 +250,12 @@ $$('.upload-trigger').forEach(btn=>btn.addEventListener('click',()=>$('#wallpape
 // Imports any drawable (image, bitmap, video frame) as the custom wallpaper.
 function useImage(picture,width,height,name){const max=2000,scale=Math.min(1,max/Math.max(width,height));const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(picture,0,0,canvas.width,canvas.height);state.customImage=canvas.toDataURL('image/jpeg',.88);state.scale=100;state.focusX=50;state.focusY=50;state.protectPerson=true;Object.assign(state,noFloat());update();toast('已导入「'+name+'」');}
 $('#wallpaper-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('请选择 JPG、PNG 或 WebP 图片');e.target.value='';return;}if(file.size>20*1024*1024){toast('请选择小于 20 MB 的图片');e.target.value='';return;}const url=URL.createObjectURL(file);try{const img=await loadImage(url);useImage(img,img.naturalWidth,img.naturalHeight,file.name);}catch{toast('图片无法读取，请换一张图片重试');}finally{imageCache.delete(url);URL.revokeObjectURL(url);e.target.value='';}});
-function addZone(){const name=$('#zone-name').value.trim();if(!name){toast('先给新分区起个名字');$('#zone-name').focus();return;}if(state.zones.length>=3){toast('当前布局最多支持 3 个收纳分区');return;}const [x,y]=zoneSlot(state.zones.length);state.zones.push({id:crypto.randomUUID(),name,x,y,collapsed:false});$('#zone-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加分区「'+name+'」');}
+function addZone(){const name=$('#zone-name').value.trim();if(!name){toast('先给新分区起个名字');$('#zone-name').focus();return;}if(state.zones.length>=3){toast('当前布局最多支持 3 个收纳分区');return;}const [x,y]=zoneSlot(state.zones.length);state.zones.push({id:crypto.randomUUID(),name,x,y});$('#zone-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加分区「'+name+'」');}
 // Item kinds with an icon and colour: file, folder, image, code, music. Returns null when every zone is full.
 function createItem(name,kind='file'){const zone=state.zones.find(z=>state.items.filter(i=>i.zone===z.id).length<6);if(!zone||state.items.length>=18)return null;const item={id:crypto.randomUUID(),name,kind,zone:zone.id};state.items.push(item);state.showIcons=true;update({zones:true,custom:false});return item;}
 function addItem(){const name=$('#item-name').value.trim();if(!name){toast('请输入快捷项名称');$('#item-name').focus();return;}if(!createItem(name)){toast('分区已满，请先新增收纳分区');return;}$('#item-name').value='';toast('已添加演示快捷项');}
 $('#add-zone').addEventListener('click',addZone);$('#add-item').addEventListener('click',addItem);$('#zone-name').addEventListener('keydown',e=>{if(e.key==='Enter')addZone();});$('#item-name').addEventListener('keydown',e=>{if(e.key==='Enter')addItem();});
-$('#zone-layout-reset').addEventListener('click',()=>{state.zones.forEach((z,i)=>{[z.x,z.y]=zoneSlot(i);z.collapsed=false;});update({zones:true,custom:false});toast('分区已回到默认位置');});
+$('#zone-layout-reset').addEventListener('click',()=>{state.zones.forEach((z,i)=>{[z.x,z.y]=zoneSlot(i);});update({zones:true,custom:false});toast('分区已回到默认位置');});
 $('#organize').addEventListener('click',()=>{state.items.sort((a,b)=>a.kind.localeCompare(b.kind)||a.name.localeCompare(b.name,'zh-CN'));state.items.forEach((item,i)=>{item.zone=state.zones[Math.floor(i/6)]?.id||state.zones[0].id;});state.showIcons=true;update({zones:true,custom:false});toast('已按类型整理快捷项');});
 const handle=$('#split-handle');
 const clampPercent=v=>Math.max(1,Math.min(99,v));
