@@ -41,6 +41,7 @@ const assert=require('node:assert/strict');
  assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['probe','note']);
  await page.waitForFunction(()=>document.querySelector('[data-module="probe"]')?.dataset.ran==='true');
  assert.equal(await page.locator('[data-module="probe"]').evaluate(el=>[el.dataset.mounted,el.style.zIndex].join()),'1,2');
+ assert.equal(await page.locator('[data-module="note"]').evaluate(el=>el.style.zIndex),'18','modules above the person clear all twelve copies');
  assert.deepEqual(await page.evaluate(async()=>{const c=await wallpaperCanvas(state);return [...c.getContext('2d').getImageData(5,5,1,1).data];}),[255,0,255,255]);
  assert.equal(await page.evaluate(()=>state.modules.probe.on),true);
  // A module that throws in every hook does not break rendering, export or the page.

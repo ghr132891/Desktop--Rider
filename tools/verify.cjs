@@ -24,6 +24,15 @@ const fs=require('node:fs');
  await page.locator('#item-name').fill('今日计划');await page.locator('#add-item').click();assert.equal(await page.locator('.desktop-item').count(),7);
  const item=page.locator('[data-item="i1"]');await item.click();assert.equal(await page.locator('[data-item="i1"]').evaluate(e=>e.closest('.desktop-zone').dataset.zone),'life');
  await page.locator('#organize').click();assert.equal(await page.locator('.desktop-item').count(),7);
+ // Zones: drag by the heading, click to fold, keyboard, persistence, reset.
+ const zoneBefore=await page.evaluate(()=>({...state.zones[0]}));const zh=await page.locator('[data-zone="work"] .zone-heading').boundingBox();
+ await page.mouse.move(zh.x+zh.width/2,zh.y+zh.height/2);await page.mouse.down();await page.mouse.move(zh.x+zh.width/2+120,zh.y+zh.height/2-80,{steps:5});await page.mouse.up();
+ const zoneAfter=await page.evaluate(()=>({...state.zones[0],left:document.querySelector('[data-zone="work"]').style.left}));assert(zoneAfter.x>zoneBefore.x+5&&zoneAfter.y<zoneBefore.y-3,'zone dragged');assert.equal(zoneAfter.left,zoneAfter.x+'%');assert.equal(zoneAfter.collapsed,false,'a drag does not fold');
+ await page.locator('[data-zone="work"] .zone-heading').click();assert.deepEqual(await page.evaluate(()=>[state.zones[0].collapsed,document.querySelector('[data-zone="work"]').classList.contains('collapsed'),document.querySelector('[data-zone="work"] .zone-heading').getAttribute('aria-expanded')]),[true,true,'false']);
+ await page.locator('[data-zone="work"] .zone-heading').focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>state.zones[0].collapsed),false);await page.keyboard.press('Shift+ArrowLeft');assert.equal(await page.evaluate(()=>state.zones[0].x),Math.round((zoneAfter.x-5)*10)/10);
+ await page.locator('[data-zone="work"] .zone-heading').click();await page.reload();assert.deepEqual(await page.evaluate(()=>[state.zones[0].collapsed,state.zones[0].x,document.querySelector('[data-zone="work"]').classList.contains('collapsed')]),[true,Math.round((zoneAfter.x-5)*10)/10,true]);
+ await page.locator('[data-view="manage"]').click();await page.locator('#zone-layout-reset').click();assert.deepEqual(await page.evaluate(()=>state.zones.map(z=>[z.x,z.y,z.collapsed])),[[6.5,48,false],[66,24,false],[66,56,false]]);
+ assert.deepEqual(await page.evaluate(()=>normalizeState({...state,zones:[{id:'a',name:'A',x:500,y:-3,collapsed:'yes'},{id:'b',name:'B'}]}).zones),[{id:'a',name:'A',x:71,y:0,collapsed:false},{id:'b',name:'B',x:66,y:24,collapsed:false}]);
  await page.locator('[data-view="wallpaper"]').click();await page.locator('[data-wallpaper="forest"]').click();await range('wallpaper-scale',125);
  await page.locator('#save').click();await page.locator('#scheme-name').fill('验证方案');await page.locator('#save-form button[type="submit"]').click();await page.waitForFunction(()=>!document.querySelector('#save-dialog').open);
  await page.locator('[data-view="saved"]').click();assert.equal(await page.locator('.saved-card').count(),1);assert.equal(await page.locator('.saved-card h3').textContent(),'验证方案');

@@ -32,7 +32,7 @@ Rider.register({
 ### 界面位置
 
 - `panel`：设置面板内的容器（`#module-controls > #module-<id>`）。声明 `view` 时只在本模块视图显示；否则在 `panelView` 视图下显示。面板内沿用 `.control-section`、`.slider-control`、`.switch-row`、`.color-row`、`.inline-form` 等现有样式，`input[type=range]` 的进度条由核心统一刷新。
-- `layer`：桌面预览内的图层（`#module-layers > .module-layer`，覆盖整个桌面）。图层本身不接收指针事件，模块自己的子元素接收，所以分割手柄、人物副本仍可操作。位置请用桌面百分比，预览与导出共用同一份状态。
+- `layer`：桌面预览内的图层（`#module-layers > .module-layer`，覆盖整个桌面）。图层本身不接收指针事件，模块自己的子元素接收，所以分割手柄、人物副本仍可操作。`order < 100` 的图层在悬浮人物之下，其余在人物与选中框之上、分区与 Dock 之下；分割手柄始终在最上层。位置请用桌面百分比，预览与导出共用同一份状态。
 - `view`：声明后侧栏多一个入口，页面标题、面包屑与面板标题随之切换，桌面预览保持可见；`page:true` 时在预览下方再给一个 `section`（`mod.page`），放列表、文件浏览等大块内容。`icon` 取 `index.html` 里 `#i-*` 符号名。
 
 ### 导出
