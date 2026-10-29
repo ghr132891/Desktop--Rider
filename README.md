@@ -27,6 +27,7 @@ python3 tools/serve.py
 - 方案命名、保存、恢复、删除；自动保存工作草稿，刷新前同步待保存修改。
 - 导出 1600px 宽 PNG 分裂壁纸，16:10 时为 1600×1000。只导出壁纸，不含示例图标、分割手柄与界面。
 - 全屏预览、窄屏布局、键盘焦点、减少动态效果偏好。
+- 模块机制（`core.js`）：桌面歌词、文件管理、时钟这类后续功能各写成 `modules/` 下的一个文件，通过 `Rider.register` 接入自己的状态切片（随草稿、方案、重置一起处理）、侧栏视图、设置面板、桌面图层和导出绘制；模块出错只记录日志，不影响核心。`modules/note.js`「桌面文字」是示例：一行文字可拖动、缩放、换色，随方案保存并画进导出 PNG。接口说明见 `docs/modules.md`。
 
 ## 当前边界
 
@@ -48,7 +49,9 @@ python3 tools/serve.py
 
 - `index.html`：页面结构、控件与弹窗。
 - `styles.css`：工作台样式与响应式布局。
-- `app.js`：裁切几何、壁纸渲染、交互、导入导出、本地存储。
+- `core.js`：模块注册表、状态切片校验、事件与模块私有存储。
+- `modules/note.js`：示例模块「桌面文字」，也是新模块的模板。
+- `app.js`：裁切几何、壁纸渲染、交互、导入导出、本地存储；启动时挂载模块并提供 `Rider.api`。
 - `portrait.js`：人物保护、距离场、背景合成；预览与导出共用。
 - `person-worker.js`：在 Worker 中运行本地人物分割模型。
 - `cutout.js`：人物悬浮的点选蒙版合并、导向滤波边缘细化、透明人物图层与背景补全。
@@ -57,6 +60,7 @@ python3 tools/serve.py
 - `assets/`：内置壁纸及本地人物分割模型。
 - `vendor/mediapipe/`：固定版本运行库与许可证。
 - `docs/portrait-algorithms.md`：算法调研、选型、具体实现与限制。
+- `docs/modules.md`：模块接口、生命周期、导出顺序，以及桌面歌词、文件管理等功能的落点。
 - `tools/create_wallpapers.py`：生成项目内矢量壁纸。
 - `tools/serve.py`：仅本机可访问的开发服务器。
 - `tools/verify.cjs`：浏览器行为与导出验证，依赖当前开发环境的 Playwright 和 Chrome。
@@ -73,6 +77,8 @@ python3 tools/serve.py
 人物与分割交互回归：`node tools/verify-portrait.cjs`。普通模式和人物模式的测试与限制详见 `docs/portrait-algorithms.md`。
 
 人物悬浮与 Wallpaper Engine 导入回归：`node tools/verify-float.cjs`。覆盖自动抠图、背景补全、拖动 / 滚轮 / 键盘、导出位置、刷新恢复、点选添加 / 去除，以及用测试生成的 scene.pkg（内嵌 PNG、LZ4 原始 RGBA 与 DXT5 纹理，另含 DXT1 四色 / 三色块的逐像素校验）验证文件夹扫描和图层解码。
+
+模块机制回归：`node tools/verify-modules.cjs`。覆盖示例模块的视图、控件、拖动、键盘、导出像素与持久化，状态校验，运行中注册模块与绘制顺序，处处抛错的模块不影响核心，以及事件、`api`、`storage`。
 
 拖动画面回归：`node tools/verify-drag-motion.cjs`，检查鼠标尚未松开时画面已经更新（含垂直线纯纵向拖动），并验证人物整体变换、关闭联动和导出一致性。
 

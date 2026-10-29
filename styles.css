@@ -30,4 +30,8 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 
 /* Copies of the floating person: the container keeps them positioned against the desktop. */
 #float-layers{display:contents}.float-person.active{outline:2px dashed #ffffffb3;outline-offset:2px}
+/* Modules (core.js): sidebar entries join the nav grid; each desktop layer covers the desktop
+   but only its own children take pointer events, so split handles stay reachable. */
+#module-nav{display:contents}#module-layers{display:contents}.module-layer{position:absolute;inset:0;pointer-events:none}.module-layer>*{pointer-events:auto}.module-page{margin-top:28px}
+.note-text{position:absolute;transform:translate(-50%,-50%);white-space:pre;max-width:96%;overflow:hidden;text-overflow:ellipsis;font-weight:500;line-height:1.3;cursor:grab;touch-action:none;user-select:none}.note-text.shadow{text-shadow:0 .1em .3em #0b182c80}.note-text.dragging{cursor:grabbing}.note-text:focus-visible{outline:2px dashed #fff;outline-offset:3px}
 .float-copies{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;margin:12px 0 4px}.float-copy-tools{display:flex;gap:4px 10px;flex-wrap:wrap}.float-copy-tools .text-button:disabled{opacity:.4;cursor:default}

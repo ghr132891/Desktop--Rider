@@ -10,6 +10,7 @@ const wallpapers = [
   {id:'portrait',name:'林间人像',tone:'人像实拍',src:'assets/portrait-wallpaper.jpg'}
 ];
 const defaults = {floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间'},{id:'life',name:'日常灵感'}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
+defaults.modules=Rider.moduleDefaults(); // one slice per registered module (core.js)
 const presets = [
  {id:'focus',name:'专注斜切',desc:'灵感与效率并行',mode:'diagonal',angle:15,ratio:58,gap:16,wallpaper:'mountain'},
  {id:'balance',name:'左右有序',desc:'工作生活，各得其所',mode:'vertical',angle:0,ratio:50,gap:22,wallpaper:'forest'},
@@ -28,7 +29,8 @@ function normalizeState(input){const s={...clone(defaults),...input};
  const legacy=[{x:s.floatX??null,y:s.floatY??null,size:s.floatSize??null,flip:s.floatFlip===true}],num=(v,min,max)=>v===null||v===undefined?null:clamp(v,min,max,null);
  s.floatCopies=(Array.isArray(s.floatCopies)&&s.floatCopies.length?s.floatCopies:legacy).slice(0,12).filter(c=>c&&typeof c==='object').map(c=>({x:num(c.x,-20,120),y:num(c.y,-20,120),size:num(c.size,10,150),flip:c.flip===true}));
  if(!s.floatCopies.length)s.floatCopies=[{x:null,y:null,size:null,flip:false}];s.floatActive=Number.isInteger(s.floatActive)?Math.max(0,Math.min(s.floatCopies.length-1,s.floatActive)):0;
- delete s.floatX;delete s.floatY;delete s.floatSize;delete s.floatFlip;return s;
+ delete s.floatX;delete s.floatY;delete s.floatSize;delete s.floatFlip;
+ s.modules=Rider.normalizeModules(input.modules,clamp);return s;
 }
 let draft = readStorage('desktop-rider-draft',null);
 let state = validState(draft) ? normalizeState(draft) : clone(defaults);
@@ -116,6 +118,7 @@ async function renderDesktop(){
  $('#toggle-icons').textContent=s.showIcons?'隐藏桌面图标':'显示桌面图标';
  $('#desktop-caption').textContent=s.customImage?'我的壁纸':wallpapers.find(x=>x.id===s.wallpaper).name;
  $('#resolution-label').textContent=`1600 × ${Math.round(1600/s.aspect)}`;
+ for(const m of Rider.modules)Rider.call(m,'render',{s,w,h,layer:m.layer,api:Rider.api});
  const portraitLayer=$('#portrait-layer'),key=sceneKey(s);
  const keepPortrait=s.protectPerson&&portraitFrameSource===key&&portraitLayer.width===w&&portraitLayer.height===h;
  portraitLayer.hidden=!keepPortrait;
@@ -134,6 +137,7 @@ async function renderDesktop(){
   $('#person-status').textContent=result.person.coverage>.005?'人物保护已就绪 · 分割缝从人物后方经过':'未检测到明显人物 · 仍按整图比例处理';
  }else{$('#person-status').textContent=floating(s)?'人物已悬浮，背景中不再需要人物保护':'在本机识别人像，不上传照片';$('#retry-person').hidden=true;}
  }catch(error){if(seq!==renderSequence)return;$('#person-status').textContent='人物识别失败，暂显示完整原图。可重试或关闭人物优先。';$('#retry-person').hidden=!s.protectPerson;if(floating(s))$('#float-status').textContent='抠图失败，可重试或调整抠图范围';toast(error.message);}
+ Rider.emit('render',{s,w,h});
 }
 
 function updateControls(){
@@ -155,10 +159,12 @@ function updateControls(){
  $('.saved-count').textContent=String(saved.length);
  $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=activeCopy(state).flip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
  $('#protect-person').disabled=floating(state);if(!state.floatPerson)$('#float-status').textContent='打开后自动识别主体，也可以手动点选。';
+ for(const m of Rider.modules)Rider.call(m,'sync',{s:state,panel:m.panel,api:Rider.api});
+ $$('input[type=range]',$('#module-controls')).forEach(el=>el.style.setProperty('--progress',((Number(el.value)-Number(el.min))/(Number(el.max)-Number(el.min))*100)+'%'));
 }
 let renderFrame;
 function scheduleRender(){cancelAnimationFrame(renderFrame);renderFrame=requestAnimationFrame(()=>renderDesktop());}
-function update({zones=false,custom=true}={}){if(custom)state.preset=null;updateControls();scheduleRender();if(zones)renderZones();persistDraft();}
+function update({zones=false,custom=true}={}){if(custom)state.preset=null;updateControls();scheduleRender();if(zones)renderZones();persistDraft();Rider.emit('state',state);}
 function moveItem(itemId,zoneId){const item=state.items.find(x=>x.id===itemId);if(!item||!state.zones.some(z=>z.id===zoneId))return;const count=state.items.filter(x=>x.zone===zoneId).length;if(item.zone!==zoneId&&count>=6){toast('每个分区最多收纳 6 个快捷项');return;}item.zone=zoneId;update({zones:true,custom:false});}
 function renderZones(){
  const root=$('#desktop-zones');root.replaceChildren();
@@ -176,12 +182,19 @@ function renderPresets(){
  const root=$('#preset-grid');presets.forEach(p=>{const button=document.createElement('button');button.className='preset-card';button.dataset.preset=p.id;const thumb=document.createElement('div');thumb.className='preset-thumb';const a=document.createElement('div'),b=document.createElement('div');[a,b].forEach(el=>el.style.backgroundImage=`url("assets/${p.wallpaper}.svg")`);if(p.mode!=='single'){const tilt=p.mode==='diagonal'?p.angle*.7:0;const r=p.ratio;a.style.clipPath=`polygon(0 0,${r+tilt-1}% 0,${r-tilt-1}% 100%,0 100%)`;b.style.clipPath=`polygon(${r+tilt+1}% 0,100% 0,100% 100%,${r-tilt+1}% 100%)`;}else b.hidden=true;thumb.append(a,b);wallpaperCanvas({...clone(defaults),...p},480).then(canvas=>{a.style.backgroundImage=`url("${canvas.toDataURL('image/png')}")`;a.style.clipPath='none';b.hidden=true;}).catch(()=>{});const check=document.createElement('span');check.className='preset-check';check.append(icon('check'));thumb.append(check);const meta=document.createElement('div');meta.className='preset-meta';const name=document.createElement('strong');name.textContent=p.name;const desc=document.createElement('span');desc.textContent=p.desc;meta.append(name,desc);button.append(thumb,meta);button.addEventListener('click',()=>{Object.assign(state,{mode:p.mode,angle:p.angle,ratio:p.ratio,gap:p.gap,wallpaper:p.wallpaper,preset:p.id,customImage:null,scale:100,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,...noFloat()});update({custom:false});toast('已载入「'+p.name+'」布局');});root.append(button);});
 }
 function renderWallpapers(){const root=$('#wallpaper-grid');wallpapers.forEach(w=>{const btn=document.createElement('button');btn.className='wallpaper-card';btn.dataset.wallpaper=w.id;const img=new Image();img.src=w.src;img.alt=w.name;const name=document.createElement('strong');name.textContent=w.name;const tone=document.createElement('small');tone.textContent=w.tone;btn.append(img,name,tone);btn.addEventListener('click',()=>{state.wallpaper=w.id;state.customImage=null;state.protectPerson=w.id==='portrait';Object.assign(state,noFloat());state.focusX=50;state.focusY=50;update();toast('已切换壁纸：'+w.name);});root.append(btn);});}
-const viewCopy={design:['桌面设计','桌面，由你定义。','分开空间，连接灵感。创造一个刚刚好的桌面。','分裂设置'],wallpaper:['壁纸收藏','把喜欢，设为日常。','一片风景，一种心情。让壁纸成为你的灵感底色。','壁纸设置'],manage:['桌面管理','各就各位，井然有序。','给每一份工作与灵感，留一个专属的位置。','收纳设置'],saved:['我的方案','喜欢的桌面，随时回来。','收好每一次灵感，轻松切换你的桌面风格。','']};
-function setView(view){pickingSplit=false;currentView=view;const c=viewCopy[view];$('#breadcrumb-current').textContent=c[0];$('#page-title').textContent=c[1];$('#page-description').textContent=c[2];$('#inspector-title').textContent=c[3];$$('[data-view]').forEach(btn=>{btn.classList.toggle('active',btn.dataset.view===view);if(btn.dataset.view===view)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});$('#editor-view').hidden=view==='saved';$('#saved-view').hidden=view!=='saved';$('#design-controls').hidden=view!=='design';$('#wallpaper-controls').hidden=view!=='wallpaper';$('#manage-controls').hidden=view!=='manage';$('#presets-section').hidden=view==='wallpaper';$('#wallpapers-section').hidden=view!=='wallpaper';$('.inspector-tip').hidden=view!=='design';if(view==='saved')renderSaved();else{renderDesktop();renderZones();}updateControls();}
-async function wallpaperCanvas(s,width=1600){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width/s.aspect);const ctx=canvas.getContext('2d');const w=canvas.width,h=canvas.height;ctx.fillStyle=s.gapColor;ctx.fillRect(0,0,w,h);const view=await scene(s),geo=geometry(s,w,h);
- if(s.protectPerson&&!view.cut)return (await Portrait.render(s,view.img,w,h,geo,view.src)).canvas;
+// Views: the four built-in ones plus one per module that declares `view` (added in mountModule).
+const views={design:{crumb:'桌面设计',title:'桌面，由你定义。',description:'分开空间，连接灵感。创造一个刚刚好的桌面。',inspector:'分裂设置',panel:'#design-controls'},wallpaper:{crumb:'壁纸收藏',title:'把喜欢，设为日常。',description:'一片风景，一种心情。让壁纸成为你的灵感底色。',inspector:'壁纸设置',panel:'#wallpaper-controls'},manage:{crumb:'桌面管理',title:'各就各位，井然有序。',description:'给每一份工作与灵感，留一个专属的位置。',inspector:'收纳设置',panel:'#manage-controls'},saved:{crumb:'我的方案',title:'喜欢的桌面，随时回来。',description:'收好每一次灵感，轻松切换你的桌面风格。',inspector:''}};
+function setView(view){if(!views[view])view='design';pickingSplit=false;currentView=view;const v=views[view];$('#breadcrumb-current').textContent=v.crumb;$('#page-title').textContent=v.title;$('#page-description').textContent=v.description;$('#inspector-title').textContent=v.inspector;$$('[data-view]').forEach(btn=>{btn.classList.toggle('active',btn.dataset.view===view);if(btn.dataset.view===view)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});$('#editor-view').hidden=view==='saved';$('#saved-view').hidden=view!=='saved';
+ ['#design-controls','#wallpaper-controls','#manage-controls'].forEach(id=>{$(id).hidden=v.panel!==id;});
+ for(const m of Rider.modules){m.panel.hidden=!(m.view?view===m.id:(m.panelView||'design')===view);if(m.page)m.page.hidden=view!==m.id;}
+ $('#presets-section').hidden=view==='wallpaper'||!!v.module;$('#wallpapers-section').hidden=view!=='wallpaper';$('.inspector-tip').hidden=view!=='design';if(view==='saved')renderSaved();else{renderDesktop();renderZones();}updateControls();
+ for(const m of Rider.modules)Rider.call(m,'onView',{view,api:Rider.api});Rider.emit('view',view);}
+// Export order: wallpaper, modules with order < 100, the floating person, the remaining modules.
+async function drawModules(ctx,s,w,h,view,pick){for(const m of Rider.modules){if(!pick(m)||typeof m.draw!=='function')continue;ctx.save();try{await m.draw({ctx,s,w,h,view,api:Rider.api});}catch(error){console.error(`[module ${m.id}] draw`,error);}ctx.restore();}}
+async function wallpaperCanvas(s,width=1600){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width/s.aspect);const ctx=canvas.getContext('2d');const w=canvas.width,h=canvas.height;ctx.fillStyle=s.gapColor;ctx.fillRect(0,0,w,h);const view=await scene(s),geo=geometry(s,w,h),below=m=>m.order<100;
+ if(s.protectPerson&&!view.cut){const out=(await Portrait.render(s,view.img,w,h,geo,view.src)).canvas;await drawModules(out.getContext('2d'),s,w,h,view,()=>true);return out;}
  geo.polygons.forEach((points,i)=>{if(!points.length)return;ctx.save();ctx.beginPath();points.forEach(([x,y],j)=>j?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();const placement=wallpaperPlacement(s,view.img,w,h,points,i);ctx.drawImage(view.img,placement.x,placement.y,placement.w,placement.h);ctx.restore();});
- drawFloat(ctx,s,view,w,h);return canvas;}
+ await drawModules(ctx,s,w,h,view,below);drawFloat(ctx,s,view,w,h);await drawModules(ctx,s,w,h,view,m=>!below(m));return canvas;}
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function renderSaved(){const root=$('#saved-grid');root.replaceChildren();$('#empty-saved').hidden=saved.length>0;saved.forEach(entry=>{const card=document.createElement('article');card.className='saved-card';if(typeof entry.thumbnail==='string'&&entry.thumbnail.startsWith('data:image/')){const img=new Image();img.src=entry.thumbnail;img.alt=entry.name+'壁纸预览';card.append(img);}const content=document.createElement('div');content.className='saved-card-content';const heading=document.createElement('h3');heading.textContent=entry.name;const date=document.createElement('p');date.textContent='保存于 '+new Date(entry.createdAt).toLocaleDateString('zh-CN');const actions=document.createElement('div');actions.className='saved-card-actions';const load=document.createElement('button');load.className='button secondary';load.textContent='载入方案';load.addEventListener('click',()=>{state=normalizeState(entry.state);setView('design');update({zones:true,custom:false});toast('已载入「'+entry.name+'」');});const remove=document.createElement('button');remove.className='text-button';remove.textContent='删除';remove.addEventListener('click',()=>{const next=saved.filter(s=>s.id!==entry.id);try{localStorage.setItem('desktop-rider-schemes',JSON.stringify(next));saved=next;renderSaved();updateControls();toast('已删除方案「'+entry.name+'」');}catch{toast('删除未完成，无法写入浏览器存储');}});actions.append(load,remove);content.append(heading,date,actions);card.append(content);root.append(card);});}
 $$('[data-view]').forEach(btn=>btn.addEventListener('click',()=>setView(btn.dataset.view)));
@@ -210,7 +223,9 @@ $$('.upload-trigger').forEach(btn=>btn.addEventListener('click',()=>$('#wallpape
 function useImage(picture,width,height,name){const max=2000,scale=Math.min(1,max/Math.max(width,height));const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(picture,0,0,canvas.width,canvas.height);state.customImage=canvas.toDataURL('image/jpeg',.88);state.scale=100;state.focusX=50;state.focusY=50;state.protectPerson=true;Object.assign(state,noFloat());update();toast('已导入「'+name+'」');}
 $('#wallpaper-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('请选择 JPG、PNG 或 WebP 图片');e.target.value='';return;}if(file.size>20*1024*1024){toast('请选择小于 20 MB 的图片');e.target.value='';return;}const url=URL.createObjectURL(file);try{const img=await loadImage(url);useImage(img,img.naturalWidth,img.naturalHeight,file.name);}catch{toast('图片无法读取，请换一张图片重试');}finally{imageCache.delete(url);URL.revokeObjectURL(url);e.target.value='';}});
 function addZone(){const name=$('#zone-name').value.trim();if(!name){toast('先给新分区起个名字');$('#zone-name').focus();return;}if(state.zones.length>=3){toast('当前布局最多支持 3 个收纳分区');return;}state.zones.push({id:crypto.randomUUID(),name});$('#zone-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加分区「'+name+'」');}
-function addItem(){const name=$('#item-name').value.trim();if(!name){toast('请输入快捷项名称');$('#item-name').focus();return;}const zone=state.zones.find(z=>state.items.filter(i=>i.zone===z.id).length<6);if(!zone){toast('分区已满，请先新增收纳分区');return;}state.items.push({id:crypto.randomUUID(),name,kind:'file',zone:zone.id});$('#item-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加演示快捷项');}
+// Item kinds with an icon and colour: file, folder, image, code, music. Returns null when every zone is full.
+function createItem(name,kind='file'){const zone=state.zones.find(z=>state.items.filter(i=>i.zone===z.id).length<6);if(!zone||state.items.length>=18)return null;const item={id:crypto.randomUUID(),name,kind,zone:zone.id};state.items.push(item);state.showIcons=true;update({zones:true,custom:false});return item;}
+function addItem(){const name=$('#item-name').value.trim();if(!name){toast('请输入快捷项名称');$('#item-name').focus();return;}if(!createItem(name)){toast('分区已满，请先新增收纳分区');return;}$('#item-name').value='';toast('已添加演示快捷项');}
 $('#add-zone').addEventListener('click',addZone);$('#add-item').addEventListener('click',addItem);$('#zone-name').addEventListener('keydown',e=>{if(e.key==='Enter')addZone();});$('#item-name').addEventListener('keydown',e=>{if(e.key==='Enter')addItem();});
 $('#organize').addEventListener('click',()=>{state.items.sort((a,b)=>a.kind.localeCompare(b.kind)||a.name.localeCompare(b.name,'zh-CN'));state.items.forEach((item,i)=>{item.zone=state.zones[Math.floor(i/6)]?.id||state.zones[0].id;});state.showIcons=true;update({zones:true,custom:false});toast('已按类型整理快捷项');});
 const handle=$('#split-handle');
@@ -348,6 +363,20 @@ $('#we-apply').addEventListener('click',async()=>{
  }catch(error){toast('导入失败：'+(error.message||'无法读取这张图片'));}finally{button.disabled=false;}
 });
 new ResizeObserver(()=>scheduleRender()).observe($('#desktop'));
-function updateClock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});$('.desktop-top>span:last-child').firstChild.textContent=now.toLocaleDateString('zh-CN',{weekday:'short',month:'long',day:'numeric'})+' ';}
+function updateClock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});$('.desktop-top>span:last-child').firstChild.textContent=now.toLocaleDateString('zh-CN',{weekday:'short',month:'long',day:'numeric'})+' ';Rider.emit('tick',now);}
 updateClock();setInterval(updateClock,60000);
-renderPresets();renderWallpapers();updateControls();renderZones();renderDesktop();
+// Modules (core.js): what a module may use of the app. Getters read live values.
+Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
+let booted=false;
+function mountModule(mod){
+ mod.panel=document.createElement('div');mod.panel.className='module-panel';mod.panel.id='module-'+mod.id;mod.panel.hidden=true;$('#module-controls').append(mod.panel);
+ mod.layer=document.createElement('div');mod.layer.className='module-layer';mod.layer.dataset.module=mod.id;mod.layer.style.zIndex=mod.order<100?2:6;$('#module-layers').append(mod.layer);
+ if(mod.view){const btn=document.createElement('button');btn.className='nav-item';btn.dataset.view=mod.id;btn.append(icon(mod.view.icon||'grid'),document.createTextNode(mod.view.label||mod.name));btn.addEventListener('click',()=>setView(mod.id));$('#module-nav').append(btn);
+  if(mod.view.page){mod.page=document.createElement('section');mod.page.className='module-page';mod.page.hidden=true;$('#module-pages').append(mod.page);}
+  views[mod.id]={crumb:mod.view.label||mod.name,title:mod.view.title||mod.name,description:mod.view.description||'',inspector:mod.view.inspectorTitle||mod.name,module:mod};}
+ defaults.modules[mod.id]??=clone(mod.defaults||{});state.modules[mod.id]??=clone(mod.defaults||{}); // registered after boot
+ Rider.call(mod,'mount',{panel:mod.panel,layer:mod.layer,page:mod.page,api:Rider.api});
+ if(booted){updateControls();scheduleRender();}
+}
+Rider.mount(mountModule);
+renderPresets();renderWallpapers();updateControls();renderZones();renderDesktop();booted=true;

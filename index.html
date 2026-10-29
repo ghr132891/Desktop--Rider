@@ -20,6 +20,7 @@
 <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></symbol>
 <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-3v13M9 8l12-3"/><ellipse cx="5" cy="18" rx="4" ry="3"/><ellipse cx="17" cy="15" rx="4" ry="3"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/></symbol>
+<symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V4h14v3M12 4v16M9 20h6"/></symbol>
 </defs></svg>
 <div class="app-shell">
 <aside class="sidebar">
@@ -29,6 +30,7 @@
 <button class="nav-item active" data-view="design"><svg><use href="#i-split"/></svg>桌面设计<span class="nav-dot"></span></button>
 <button class="nav-item" data-view="wallpaper"><svg><use href="#i-image"/></svg>壁纸收藏</button>
 <button class="nav-item" data-view="manage"><svg><use href="#i-folder"/></svg>桌面管理</button>
+<span id="module-nav"></span>
 <button class="nav-item" data-view="saved"><svg><use href="#i-grid"/></svg>我的方案<span class="saved-count">0</span></button>
 </nav>
 <div class="sidebar-note"><div class="mini-split"><span></span><span></span></div><strong>一点个性，很大不同。</strong><p>把每天面对的桌面，<br>变成喜欢的样子。</p></div>
@@ -45,7 +47,7 @@
 <div class="preview-stage" id="preview-stage">
 <div id="desktop" class="desktop">
 <div class="wallpaper-piece piece-left" id="piece-left"></div><div class="wallpaper-piece piece-right" id="piece-right"></div>
-<canvas id="portrait-layer" hidden></canvas><div id="float-layers"></div><button id="split-picker" hidden aria-label="点击画面选择分割位置"></button><span id="pick-hint" hidden>点击画面任意位置，设为分割控制点</span>
+<canvas id="portrait-layer" hidden></canvas><div id="float-layers"></div><div id="module-layers"></div><button id="split-picker" hidden aria-label="点击画面选择分割位置"></button><span id="pick-hint" hidden>点击画面任意位置，设为分割控制点</span>
 <div class="desktop-top"><span><svg><use href="#i-grid"/></svg>我的桌面</span><span>周三 &nbsp; 10月21日 <b id="clock">09:41</b></span></div>
 <div class="desktop-greeting"><div>Make room<br>for your ideas.</div><span>自己的空间，自在的节奏。</span></div>
 <div class="desktop-zones" id="desktop-zones"></div>
@@ -79,11 +81,13 @@
 </div>
 <div id="wallpaper-controls" hidden><p class="inspector-description">选择下方壁纸，或导入自己的图片。壁纸会同时应用到两侧区域。</p><button class="button secondary full-width upload-trigger"><svg><use href="#i-plus"/></svg>导入本地壁纸</button><button class="button secondary full-width we-trigger"><svg><use href="#i-folder"/></svg>从 Wallpaper Engine 导入</button><div class="control-section"><div class="control-label"><label for="wallpaper-scale">壁纸缩放</label><output id="wallpaper-scale-value">100%</output></div><input type="range" id="wallpaper-scale" min="100" max="160" value="100"></div><div class="control-section"><div class="control-label"><label for="focus-x">壁纸横向取景</label><output id="focus-x-value">50%</output></div><input id="focus-x" type="range" min="0" max="100" value="50"><div class="control-label"><label for="focus-y">壁纸纵向取景</label><output id="focus-y-value">50%</output></div><input id="focus-y" type="range" min="0" max="100" value="50"><p class="field-hint">画面超出桌面时，调整取景以保留人物。</p></div><p class="field-hint">支持 JPG、PNG、WebP。图片在本地处理。</p></div>
 <div id="manage-controls" hidden><p class="inspector-description">将图标拖入不同分区，让工作与日常各归其位。</p><label class="field-label" for="zone-name">新增收纳分区</label><div class="inline-form"><input id="zone-name" maxlength="12" placeholder="例如：灵感素材"><button class="button primary" id="add-zone" aria-label="添加分区"><svg><use href="#i-plus"/></svg></button></div><label class="field-label" for="item-name">新增快捷项（演示）</label><div class="inline-form"><input id="item-name" maxlength="16" placeholder="例如：产品设计"><button class="button secondary" id="add-item" aria-label="添加快捷项"><svg><use href="#i-plus"/></svg></button></div><button class="button secondary full-width" id="organize"><svg><use href="#i-grid"/></svg>按类型一键整理</button><p class="field-hint">这里的图标是示例快捷项。真实文件管理将在系统客户端中接入。</p></div>
+<div id="module-controls"></div>
 <div class="inspector-tip"><svg><use href="#i-split"/></svg><span>拖动控制点改变位置；<br>拖动两端改变角度。</span></div>
 </aside>
 </div>
 <section class="presets-section" id="presets-section"><div class="section-heading"><div><h2>从一个灵感开始</h2><span>选个布局，再加一点你的风格</span></div><button class="text-button" id="show-saved">我的方案<svg><use href="#i-chevron"/></svg></button></div><div class="preset-grid" id="preset-grid"></div></section>
 <section class="wallpapers-section" id="wallpapers-section" hidden><div class="section-heading"><div><h2>把风景留在桌面</h2><span>风景与人像壁纸 · 支持自定义图片</span></div><button class="text-button upload-trigger"><svg><use href="#i-plus"/></svg>导入壁纸</button><button class="text-button we-trigger"><svg><use href="#i-folder"/></svg>Wallpaper Engine</button></div><div class="wallpaper-grid" id="wallpaper-grid"></div></section>
+<div id="module-pages"></div>
 <div class="bottom-note"><span>设计留在本地，灵感属于你。</span><span>Desktop Rider <span class="version">v0.1</span></span></div>
 </div>
 <section id="saved-view" hidden><div class="saved-heading"><h2>我的桌面方案</h2><span>保存在此浏览器，随时继续设计</span></div><div id="saved-grid" class="saved-grid"></div><div id="empty-saved" class="empty-state"><svg><use href="#i-save"/></svg><h2>收好你的第一个灵感</h2><p>调整好桌面后，点击「保存方案」。<br>你的布局、壁纸和收纳分区都会留在这里。</p><button class="button primary" id="back-design">开始设计</button></div></section>
@@ -103,8 +107,10 @@
 <dialog id="save-dialog"><form id="save-form"><div class="dialog-title"><h2>给这个桌面起个名字</h2><button class="icon-button" type="button" data-close="save-dialog" aria-label="关闭">×</button></div><p>保存分裂设置、壁纸和桌面收纳分区。</p><label class="field-label" for="scheme-name">方案名称</label><input id="scheme-name" maxlength="40" required placeholder="例如：我的灵感空间"><div class="dialog-actions"><button type="button" class="button secondary" data-close="save-dialog">取消</button><button class="button primary" type="submit">保存方案</button></div></form></dialog>
 <dialog id="help-dialog"><div class="dialog-title"><h2>欢迎来到你的桌面设计室</h2><button class="icon-button" data-close="help-dialog" aria-label="关闭">×</button></div><p>这是 Desktop Rider 的可交互原型，可以在这里设计并导出自己的分裂壁纸。</p><ol><li>选择分裂方式，点击「在画面上选分割位置」指定控制点；拖动控制点或两端调整分割，方向键也可以微调。</li><li>前往「壁纸收藏」导入图片、调整取景；打开「人物优先」，在本机识别人像并让分割缝从人物后方经过。识别失败时请重试或关闭人物优先。</li><li>在「桌面管理」中创建分区，拖动图标进行整理。键盘操作可聚焦图标后按 Enter 切换分区。</li><li>保存方案后可再次载入；「导出壁纸」会生成 PNG 图片。</li><li>打开「人物悬浮」把人物抠成独立图层，在预览中拖动、滚轮缩放；也可在「壁纸收藏」从 Wallpaper Engine 文件夹导入壁纸。</li></ol><p class="help-footnote">原型不会修改系统桌面或真实文件。系统壁纸应用、桌面图标接管与开机启动需要原生客户端支持。</p></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="core.js"></script>
 <script src="portrait.js"></script>
 <script src="cutout.js"></script>
 <script src="wallpaper-engine.js"></script>
+<script src="modules/note.js"></script>
 <script src="app.js"></script>
 </body></html>
