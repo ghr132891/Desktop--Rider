@@ -45,7 +45,7 @@
 <div class="preview-stage" id="preview-stage">
 <div id="desktop" class="desktop">
 <div class="wallpaper-piece piece-left" id="piece-left"></div><div class="wallpaper-piece piece-right" id="piece-right"></div>
-<canvas id="portrait-layer" hidden></canvas><img id="float-person" hidden alt="悬浮人物，可拖动；方向键移动，加减号缩放" title="拖动移动；滚轮或 +/− 调整大小" draggable="false" tabindex="0"><button id="split-picker" hidden aria-label="点击画面选择分割位置"></button><span id="pick-hint" hidden>点击画面任意位置，设为分割控制点</span>
+<canvas id="portrait-layer" hidden></canvas><div id="float-layers"></div><button id="split-picker" hidden aria-label="点击画面选择分割位置"></button><span id="pick-hint" hidden>点击画面任意位置，设为分割控制点</span>
 <div class="desktop-top"><span><svg><use href="#i-grid"/></svg>我的桌面</span><span>周三 &nbsp; 10月21日 <b id="clock">09:41</b></span></div>
 <div class="desktop-greeting"><div>Make room<br>for your ideas.</div><span>自己的空间，自在的节奏。</span></div>
 <div class="desktop-zones" id="desktop-zones"></div>
@@ -72,6 +72,7 @@
 <div class="color-row"><label for="gap-color">间隙颜色</label><div class="color-input"><input type="color" id="gap-color" value="#e9eff4"><span id="color-value">#E9EFF4</span></div></div></div>
 <div class="control-section float-controls"><div class="switch-row"><div><label for="float-toggle">人物悬浮</label><small>抠出人物，单独拖到桌面任意位置</small></div><input type="checkbox" id="float-toggle" class="switch"></div><p id="float-status" class="field-hint">打开后自动识别主体，也可以手动点选。</p>
 <div id="float-options" hidden><button class="button secondary full-width" id="edit-cutout"><svg><use href="#i-plus"/></svg>调整抠图范围</button>
+<div class="float-copies"><span id="float-copy-label" class="field-hint">1 份</span><div class="float-copy-tools"><button class="text-button" id="float-duplicate">复制一份</button><button class="text-button" id="float-down" disabled>下移一层</button><button class="text-button" id="float-up" disabled>上移一层</button><button class="text-button" id="float-delete" disabled>删除此份</button></div></div>
 <div class="slider-control"><div class="control-label"><label for="float-size">人物大小</label><output for="float-size" id="float-size-value">60%</output></div><input id="float-size" type="range" min="10" max="150" value="60"><div class="range-labels"><span>画面高度 10%</span><span>150%</span></div></div>
 <div class="switch-row float-switch"><label for="float-flip">水平翻转</label><input type="checkbox" id="float-flip" class="switch"></div><div class="switch-row float-switch"><label for="float-shadow">悬浮投影</label><input type="checkbox" id="float-shadow" class="switch" checked></div><div class="switch-row float-switch"><label for="float-keep">保留原位人物<small>人物留在原处，悬浮的是一份副本，不补全背景</small></label><input type="checkbox" id="float-keep" class="switch"></div>
 <button class="text-button" id="float-reset"><svg><use href="#i-reset"/></svg>放回原位置</button></div></div>

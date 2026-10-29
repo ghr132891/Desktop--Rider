@@ -9,7 +9,7 @@ const wallpapers = [
   {id:'sand',name:'旷野回声',tone:'沙岩',src:'assets/sand.svg'},
   {id:'portrait',name:'林间人像',tone:'人像实拍',src:'assets/portrait-wallpaper.jpg'}
 ];
-const defaults = {floatPerson:false,floatPoints:[],floatX:null,floatY:null,floatSize:null,floatFlip:false,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间'},{id:'life',name:'日常灵感'}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
+const defaults = {floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间'},{id:'life',name:'日常灵感'}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
 const presets = [
  {id:'focus',name:'专注斜切',desc:'灵感与效率并行',mode:'diagonal',angle:15,ratio:58,gap:16,wallpaper:'mountain'},
  {id:'balance',name:'左右有序',desc:'工作生活，各得其所',mode:'vertical',angle:0,ratio:50,gap:22,wallpaper:'forest'},
@@ -23,8 +23,12 @@ function normalizeState(input){const s={...clone(defaults),...input};
  s.ratio=clamp(s.ratio,1,99,58);s.angle=clamp(s.angle,-80,80,15);s.anchorY=clamp(s.anchorY,1,99,50);s.sourceRatio=clamp(s.sourceRatio,5,95,50);s.focusX=clamp(s.focusX,0,100,50);s.focusY=clamp(s.focusY,0,100,50);s.gap=clamp(s.gap,0,60,16);s.scale=clamp(s.scale,100,160,100);
  s.protectPerson=typeof input.protectPerson==='boolean'?input.protectPerson:input.wallpaper==='portrait';
  s.floatPoints=Array.isArray(s.floatPoints)?s.floatPoints.filter(p=>p&&[p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=1)).slice(0,24).map(p=>({x:p.x,y:p.y,add:p.add!==false})):[];
- s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatFlip=s.floatFlip===true;s.floatShadow=s.floatShadow!==false;s.floatKeepOriginal=s.floatKeepOriginal===true;
- for(const [key,min,max] of [['floatX',-20,120],['floatY',-20,120],['floatSize',10,150]])s[key]=s[key]===null?null:clamp(s[key],min,max,null);return s;
+ s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatShadow=s.floatShadow!==false;s.floatKeepOriginal=s.floatKeepOriginal===true;
+ // Copies of the cutout in z-order (last on top); drafts from before copies existed carry one in floatX/Y/Size/Flip.
+ const legacy=[{x:s.floatX??null,y:s.floatY??null,size:s.floatSize??null,flip:s.floatFlip===true}],num=(v,min,max)=>v===null||v===undefined?null:clamp(v,min,max,null);
+ s.floatCopies=(Array.isArray(s.floatCopies)&&s.floatCopies.length?s.floatCopies:legacy).slice(0,12).filter(c=>c&&typeof c==='object').map(c=>({x:num(c.x,-20,120),y:num(c.y,-20,120),size:num(c.size,10,150),flip:c.flip===true}));
+ if(!s.floatCopies.length)s.floatCopies=[{x:null,y:null,size:null,flip:false}];s.floatActive=Number.isInteger(s.floatActive)?Math.max(0,Math.min(s.floatCopies.length-1,s.floatActive)):0;
+ delete s.floatX;delete s.floatY;delete s.floatSize;delete s.floatFlip;return s;
 }
 let draft = readStorage('desktop-rider-draft',null);
 let state = validState(draft) ? normalizeState(draft) : clone(defaults);
@@ -33,7 +37,7 @@ saved = Array.isArray(saved) ? saved.filter(s=>s && typeof s.id==='string' && ty
 let pickingSplit=false;
 let currentView='design', toastTimer, persistTimer, storageWarning=false;
 const imageCache=new Map();
-const noFloat={floatPerson:false,floatPoints:[],floatX:null,floatY:null,floatSize:null};
+const noFloat=()=>({floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0});
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),3200);}
 function persistNow(){clearTimeout(persistTimer);try{localStorage.setItem('desktop-rider-draft',JSON.stringify(state));}catch{if(!storageWarning){toast('浏览器存储已满，当前修改暂未自动保存');storageWarning=true;}}}
@@ -48,12 +52,13 @@ async function scene(s){const img=await loadImage(source(s));if(!floating(s))ret
  // Keep-original: the person stays in the picture and the floating copy is a duplicate, so no fill is shown.
  if(s.floatKeepOriginal)return {src:source(s),img,cut,original:img};return {src:cut.backgroundUrl,img:await loadImage(cut.backgroundUrl),cut,original:img};}
 // Where the person sits in the uncut wallpaper: centre and height as % of the desktop.
-function floatFrame(s,view,w,h){
- let {floatX:x,floatY:y,floatSize:size}=s;
+function activeCopy(s){return s.floatCopies[Math.min(s.floatActive,s.floatCopies.length-1)];}
+function floatFrame(s,view,w,h,copy=activeCopy(s)){
+ let {x,y,size}=copy;
  if(x===null||y===null||size===null){const p=Portrait.placement({...s,mode:'single'},view.original,w,h),b=view.cut.box;x??=(p.x+(b.x+b.w/2)*p.w)/w*100;y??=(p.y+(b.y+b.h/2)*p.h)/h*100;size??=Math.max(10,Math.min(150,b.h*p.h/h*100));}
- const fh=size/100*h,fw=fh*view.cut.cutout.width/view.cut.cutout.height;return {x,y,size,left:x/100*w-fw/2,top:y/100*h-fh/2,w:fw,h:fh};
+ const fh=size/100*h,fw=fh*view.cut.cutout.width/view.cut.cutout.height;return {x,y,size,flip:copy.flip,left:x/100*w-fw/2,top:y/100*h-fh/2,w:fw,h:fh};
 }
-function drawFloat(ctx,s,view,w,h){if(!view.cut)return;const f=floatFrame(s,view,w,h);ctx.save();if(s.floatShadow){ctx.shadowColor='#0b182c59';ctx.shadowBlur=w*.012;ctx.shadowOffsetY=w*.005;}ctx.translate(f.left+f.w/2,f.top+f.h/2);if(s.floatFlip)ctx.scale(-1,1);ctx.drawImage(view.cut.cutout,-f.w/2,-f.h/2,f.w,f.h);ctx.restore();}
+function drawFloat(ctx,s,view,w,h){if(!view.cut)return;for(const copy of s.floatCopies){const f=floatFrame(s,view,w,h,copy);ctx.save();if(s.floatShadow){ctx.shadowColor='#0b182c59';ctx.shadowBlur=w*.012;ctx.shadowOffsetY=w*.005;}ctx.translate(f.left+f.w/2,f.top+f.h/2);if(copy.flip)ctx.scale(-1,1);ctx.drawImage(view.cut.cutout,-f.w/2,-f.h/2,f.w,f.h);ctx.restore();}}
 function loadImage(src){if(imageCache.has(src))return imageCache.get(src);const p=new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('壁纸读取失败，请重新导入图片'));img.src=src;});imageCache.set(src,p);return p;}
 // Clip each rectangle against the split line; all dimensions are based on a 1600px canvas.
 function geometry(s,w,h){
@@ -86,14 +91,19 @@ function wallpaperPlacement(s,img,w,h,points,index){
 }
 let renderSequence=0,portraitFrameSource=null,floatView=null;
 function syncSplitGuide(s,w,h,geo){const line=$('#split-guide-line');$('#split-guide').setAttribute('viewBox',`0 0 ${w} ${h}`);if(geo.endpoints.length===2){const [a,b]=geo.endpoints;line.setAttribute('x1',a[0]);line.setAttribute('y1',a[1]);line.setAttribute('x2',b[0]);line.setAttribute('y2',b[1]);}$('#split-guide').hidden=s.mode==='single';}
-// Positions the floating person from state alone, so dragging skips the wallpaper pipeline.
+// Positions every copy from state alone, so dragging skips the wallpaper pipeline.
 function placeFloat(){
- const el=$('#float-person'),desktop=$('#desktop'),w=desktop.clientWidth,h=desktop.clientHeight;
- if(!floatView?.cut||!floating(state)||floatView.key!==sceneKey(state)||!w){el.hidden=true;return null;}
- if(el.dataset.src!==floatView.cut.cutoutUrl){el.src=floatView.cut.cutoutUrl;el.dataset.src=floatView.cut.cutoutUrl;}
- const f=floatFrame(state,floatView,w,h);Object.assign(el.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px'});el.style.setProperty('--shadow-y',w*.005+'px');el.style.setProperty('--shadow-blur',w*.006+'px');
- el.classList.toggle('flip',state.floatFlip);el.classList.toggle('shadow',state.floatShadow);el.hidden=false;
- $('#float-size').value=f.size;$('#float-size-value').textContent=Math.round(f.size)+'%';$('#float-size').style.setProperty('--progress',(f.size-10)/140*100+'%');return f;
+ const root=$('#float-layers'),desktop=$('#desktop'),w=desktop.clientWidth,h=desktop.clientHeight;
+ if(!floatView?.cut||!floating(state)||floatView.key!==sceneKey(state)||!w){root.replaceChildren();return null;}
+ while(root.children.length>state.floatCopies.length)root.lastElementChild.remove();
+ while(root.children.length<state.floatCopies.length){const el=document.createElement('img');el.className='float-person';el.alt='悬浮人物，可拖动；方向键移动，加减号缩放';el.title='拖动移动；滚轮或 +/− 调整大小';el.draggable=false;el.tabIndex=0;root.append(el);}
+ let active=null;
+ state.floatCopies.forEach((copy,i)=>{const el=root.children[i];if(el.dataset.src!==floatView.cut.cutoutUrl){el.src=floatView.cut.cutoutUrl;el.dataset.src=floatView.cut.cutoutUrl;}el.dataset.index=i;
+  const f=floatFrame(state,floatView,w,h,copy);Object.assign(el.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px',zIndex:3+i});el.style.setProperty('--shadow-y',w*.005+'px');el.style.setProperty('--shadow-blur',w*.006+'px');
+  el.classList.toggle('flip',copy.flip);el.classList.toggle('shadow',state.floatShadow);el.classList.toggle('active',i===state.floatActive&&state.floatCopies.length>1);if(i===state.floatActive)active=f;});
+ const f=active||floatFrame(state,floatView,w,h),n=state.floatCopies.length;
+ $('#float-size').value=f.size;$('#float-size-value').textContent=Math.round(f.size)+'%';$('#float-size').style.setProperty('--progress',(f.size-10)/140*100+'%');
+ $('#float-copy-label').textContent=n>1?`第 ${state.floatActive+1} / ${n} 份 · 点击画面中的人物切换`:'1 份';$('#float-delete').disabled=n<2;$('#float-up').disabled=state.floatActive>=n-1;$('#float-down').disabled=state.floatActive<=0;$('#float-duplicate').disabled=n>=12;return f;
 }
 async function renderDesktop(){
  const seq=++renderSequence;const raw=clone(state),s={...raw,protectPerson:raw.protectPerson&&!floating(raw)},desktop=$('#desktop');desktop.style.aspectRatio=String(s.aspect);desktop.style.backgroundColor=s.gapColor;
@@ -110,7 +120,7 @@ async function renderDesktop(){
  const keepPortrait=s.protectPerson&&portraitFrameSource===key&&portraitLayer.width===w&&portraitLayer.height===h;
  portraitLayer.hidden=!keepPortrait;
  if(keepPortrait){$('#piece-left').style.display='none';$('#piece-right').style.display='none';}
- if(!floating(s))$('#float-person').hidden=true;else if(floatView?.key!==key)$('#float-status').textContent='正在本机抠出人物并补全背景…';
+ if(!floating(s))$('#float-layers').replaceChildren();else if(floatView?.key!==key)$('#float-status').textContent='正在本机抠出人物并补全背景…';
  try{const view=await scene(s);if(seq!==renderSequence)return;
  floatView=view.cut?{...view,key}:null;
  if(floating(s)){placeFloat();$('#float-status').textContent=view.cut?'人物已抠出 · 直接拖动画面中的人物，滚轮调整大小':'没有选中任何区域，请调整抠图范围';}
@@ -143,7 +153,7 @@ function updateControls(){
  $$('.preset-card').forEach(btn=>{btn.classList.toggle('selected',btn.dataset.preset===state.preset);btn.setAttribute('aria-pressed',String(btn.dataset.preset===state.preset));});
  $$('.wallpaper-card').forEach(btn=>btn.classList.toggle('selected',btn.dataset.wallpaper===state.wallpaper&&!state.customImage));
  $('.saved-count').textContent=String(saved.length);
- $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=state.floatFlip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
+ $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=activeCopy(state).flip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
  $('#protect-person').disabled=floating(state);if(!state.floatPerson)$('#float-status').textContent='打开后自动识别主体，也可以手动点选。';
 }
 let renderFrame;
@@ -163,9 +173,9 @@ function renderZones(){
  });
 }
 function renderPresets(){
- const root=$('#preset-grid');presets.forEach(p=>{const button=document.createElement('button');button.className='preset-card';button.dataset.preset=p.id;const thumb=document.createElement('div');thumb.className='preset-thumb';const a=document.createElement('div'),b=document.createElement('div');[a,b].forEach(el=>el.style.backgroundImage=`url("assets/${p.wallpaper}.svg")`);if(p.mode!=='single'){const tilt=p.mode==='diagonal'?p.angle*.7:0;const r=p.ratio;a.style.clipPath=`polygon(0 0,${r+tilt-1}% 0,${r-tilt-1}% 100%,0 100%)`;b.style.clipPath=`polygon(${r+tilt+1}% 0,100% 0,100% 100%,${r-tilt+1}% 100%)`;}else b.hidden=true;thumb.append(a,b);wallpaperCanvas({...clone(defaults),...p},480).then(canvas=>{a.style.backgroundImage=`url("${canvas.toDataURL('image/png')}")`;a.style.clipPath='none';b.hidden=true;}).catch(()=>{});const check=document.createElement('span');check.className='preset-check';check.append(icon('check'));thumb.append(check);const meta=document.createElement('div');meta.className='preset-meta';const name=document.createElement('strong');name.textContent=p.name;const desc=document.createElement('span');desc.textContent=p.desc;meta.append(name,desc);button.append(thumb,meta);button.addEventListener('click',()=>{Object.assign(state,{mode:p.mode,angle:p.angle,ratio:p.ratio,gap:p.gap,wallpaper:p.wallpaper,preset:p.id,customImage:null,scale:100,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,...noFloat});update({custom:false});toast('已载入「'+p.name+'」布局');});root.append(button);});
+ const root=$('#preset-grid');presets.forEach(p=>{const button=document.createElement('button');button.className='preset-card';button.dataset.preset=p.id;const thumb=document.createElement('div');thumb.className='preset-thumb';const a=document.createElement('div'),b=document.createElement('div');[a,b].forEach(el=>el.style.backgroundImage=`url("assets/${p.wallpaper}.svg")`);if(p.mode!=='single'){const tilt=p.mode==='diagonal'?p.angle*.7:0;const r=p.ratio;a.style.clipPath=`polygon(0 0,${r+tilt-1}% 0,${r-tilt-1}% 100%,0 100%)`;b.style.clipPath=`polygon(${r+tilt+1}% 0,100% 0,100% 100%,${r-tilt+1}% 100%)`;}else b.hidden=true;thumb.append(a,b);wallpaperCanvas({...clone(defaults),...p},480).then(canvas=>{a.style.backgroundImage=`url("${canvas.toDataURL('image/png')}")`;a.style.clipPath='none';b.hidden=true;}).catch(()=>{});const check=document.createElement('span');check.className='preset-check';check.append(icon('check'));thumb.append(check);const meta=document.createElement('div');meta.className='preset-meta';const name=document.createElement('strong');name.textContent=p.name;const desc=document.createElement('span');desc.textContent=p.desc;meta.append(name,desc);button.append(thumb,meta);button.addEventListener('click',()=>{Object.assign(state,{mode:p.mode,angle:p.angle,ratio:p.ratio,gap:p.gap,wallpaper:p.wallpaper,preset:p.id,customImage:null,scale:100,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,...noFloat()});update({custom:false});toast('已载入「'+p.name+'」布局');});root.append(button);});
 }
-function renderWallpapers(){const root=$('#wallpaper-grid');wallpapers.forEach(w=>{const btn=document.createElement('button');btn.className='wallpaper-card';btn.dataset.wallpaper=w.id;const img=new Image();img.src=w.src;img.alt=w.name;const name=document.createElement('strong');name.textContent=w.name;const tone=document.createElement('small');tone.textContent=w.tone;btn.append(img,name,tone);btn.addEventListener('click',()=>{state.wallpaper=w.id;state.customImage=null;state.protectPerson=w.id==='portrait';Object.assign(state,noFloat);state.focusX=50;state.focusY=50;update();toast('已切换壁纸：'+w.name);});root.append(btn);});}
+function renderWallpapers(){const root=$('#wallpaper-grid');wallpapers.forEach(w=>{const btn=document.createElement('button');btn.className='wallpaper-card';btn.dataset.wallpaper=w.id;const img=new Image();img.src=w.src;img.alt=w.name;const name=document.createElement('strong');name.textContent=w.name;const tone=document.createElement('small');tone.textContent=w.tone;btn.append(img,name,tone);btn.addEventListener('click',()=>{state.wallpaper=w.id;state.customImage=null;state.protectPerson=w.id==='portrait';Object.assign(state,noFloat());state.focusX=50;state.focusY=50;update();toast('已切换壁纸：'+w.name);});root.append(btn);});}
 const viewCopy={design:['桌面设计','桌面，由你定义。','分开空间，连接灵感。创造一个刚刚好的桌面。','分裂设置'],wallpaper:['壁纸收藏','把喜欢，设为日常。','一片风景，一种心情。让壁纸成为你的灵感底色。','壁纸设置'],manage:['桌面管理','各就各位，井然有序。','给每一份工作与灵感，留一个专属的位置。','收纳设置'],saved:['我的方案','喜欢的桌面，随时回来。','收好每一次灵感，轻松切换你的桌面风格。','']};
 function setView(view){pickingSplit=false;currentView=view;const c=viewCopy[view];$('#breadcrumb-current').textContent=c[0];$('#page-title').textContent=c[1];$('#page-description').textContent=c[2];$('#inspector-title').textContent=c[3];$$('[data-view]').forEach(btn=>{btn.classList.toggle('active',btn.dataset.view===view);if(btn.dataset.view===view)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});$('#editor-view').hidden=view==='saved';$('#saved-view').hidden=view!=='saved';$('#design-controls').hidden=view!=='design';$('#wallpaper-controls').hidden=view!=='wallpaper';$('#manage-controls').hidden=view!=='manage';$('#presets-section').hidden=view==='wallpaper';$('#wallpapers-section').hidden=view!=='wallpaper';$('.inspector-tip').hidden=view!=='design';if(view==='saved')renderSaved();else{renderDesktop();renderZones();}updateControls();}
 async function wallpaperCanvas(s,width=1600){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width/s.aspect);const ctx=canvas.getContext('2d');const w=canvas.width,h=canvas.height;ctx.fillStyle=s.gapColor;ctx.fillRect(0,0,w,h);const view=await scene(s),geo=geometry(s,w,h);
@@ -197,7 +207,7 @@ $('#scheme-name').addEventListener('input',e=>e.target.setCustomValidity(''));
 $('#export').addEventListener('click',async()=>{const button=$('#export');button.disabled=true;try{const canvas=await wallpaperCanvas(clone(state));const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error();download(blob,'Desktop-Rider-'+Date.now()+'.png');toast('分裂壁纸已导出为 PNG，可在系统设置中应用');}catch{toast('壁纸导出失败，请重新导入图片后重试');}finally{button.disabled=false;}});
 $$('.upload-trigger').forEach(btn=>btn.addEventListener('click',()=>$('#wallpaper-file').click()));
 // Imports any drawable (image, bitmap, video frame) as the custom wallpaper.
-function useImage(picture,width,height,name){const max=2000,scale=Math.min(1,max/Math.max(width,height));const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(picture,0,0,canvas.width,canvas.height);state.customImage=canvas.toDataURL('image/jpeg',.88);state.scale=100;state.focusX=50;state.focusY=50;state.protectPerson=true;Object.assign(state,noFloat);update();toast('已导入「'+name+'」');}
+function useImage(picture,width,height,name){const max=2000,scale=Math.min(1,max/Math.max(width,height));const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(picture,0,0,canvas.width,canvas.height);state.customImage=canvas.toDataURL('image/jpeg',.88);state.scale=100;state.focusX=50;state.focusY=50;state.protectPerson=true;Object.assign(state,noFloat());update();toast('已导入「'+name+'」');}
 $('#wallpaper-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('请选择 JPG、PNG 或 WebP 图片');e.target.value='';return;}if(file.size>20*1024*1024){toast('请选择小于 20 MB 的图片');e.target.value='';return;}const url=URL.createObjectURL(file);try{const img=await loadImage(url);useImage(img,img.naturalWidth,img.naturalHeight,file.name);}catch{toast('图片无法读取，请换一张图片重试');}finally{imageCache.delete(url);URL.revokeObjectURL(url);e.target.value='';}});
 function addZone(){const name=$('#zone-name').value.trim();if(!name){toast('先给新分区起个名字');$('#zone-name').focus();return;}if(state.zones.length>=3){toast('当前布局最多支持 3 个收纳分区');return;}state.zones.push({id:crypto.randomUUID(),name});$('#zone-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加分区「'+name+'」');}
 function addItem(){const name=$('#item-name').value.trim();if(!name){toast('请输入快捷项名称');$('#item-name').focus();return;}const zone=state.zones.find(z=>state.items.filter(i=>i.zone===z.id).length<6);if(!zone){toast('分区已满，请先新增收纳分区');return;}state.items.push({id:crypto.randomUUID(),name,kind:'file',zone:zone.id});$('#item-name').value='';state.showIcons=true;update({zones:true,custom:false});toast('已添加演示快捷项');}
@@ -227,32 +237,38 @@ for(const [id,index] of [['split-handle',-1],['split-start',0],['split-end',1]])
 }
 // Floating person: drag, wheel and keyboard only move the layer, not the wallpaper.
 function updateFloat(){state.preset=null;placeFloat();updateControls();persistDraft();}
-function pinFloat(){const f=placeFloat();if(f)Object.assign(state,{floatX:f.x,floatY:f.y,floatSize:f.size});return f;}
+function pinFloat(){const f=placeFloat();if(f)Object.assign(activeCopy(state),{x:f.x,y:f.y,size:f.size});return f;}
 const clampFloat=v=>Math.max(-20,Math.min(120,Math.round(v*10)/10)),clampSize=v=>Math.max(10,Math.min(150,Math.round(v*10)/10));
 $('#float-toggle').addEventListener('change',async e=>{
  if(!e.target.checked){state.floatPerson=false;update();return;}
  if(state.floatPoints.length){state.floatPerson=true;update();return;}
  e.target.disabled=true;$('#float-status').textContent='正在识别画面主体…';
  try{const img=await loadImage(source()),point=await Cutout.autoPoint(img,source());
-  if(point){Object.assign(state,{...noFloat,floatPerson:true,floatPoints:[point]});update();}
+  if(point){Object.assign(state,{...noFloat(),floatPerson:true,floatPoints:[point]});update();}
   else{e.target.checked=false;$('#float-status').textContent='没有自动找到人物，请手动点选。';openCutout();}
  }catch(error){e.target.checked=false;$('#float-status').textContent='识别失败，可以手动点选人物。';toast(error.message);}finally{e.target.disabled=false;}
 });
-$('#float-size').addEventListener('input',e=>{pinFloat();state.floatSize=clampSize(Number(e.target.value));updateFloat();});
-$('#float-flip').addEventListener('change',e=>{state.floatFlip=e.target.checked;updateFloat();});
+$('#float-size').addEventListener('input',e=>{pinFloat();activeCopy(state).size=clampSize(Number(e.target.value));updateFloat();});
+$('#float-flip').addEventListener('change',e=>{activeCopy(state).flip=e.target.checked;updateFloat();});
 $('#float-shadow').addEventListener('change',e=>{state.floatShadow=e.target.checked;updateFloat();});
 $('#float-keep').addEventListener('change',e=>{state.floatKeepOriginal=e.target.checked;update();});
-$('#float-reset').addEventListener('click',()=>{Object.assign(state,{floatX:null,floatY:null,floatSize:null});updateFloat();toast('人物已放回原位置');});
+$('#float-reset').addEventListener('click',()=>{Object.assign(activeCopy(state),{x:null,y:null,size:null});updateFloat();toast('人物已放回原位置');});
+// Copies: duplicate the active one a little offset, delete it, or move it through the stack.
+$('#float-duplicate').addEventListener('click',()=>{const f=pinFloat();if(!f||state.floatCopies.length>=12)return;state.floatCopies.push({x:clampFloat(f.x+6),y:clampFloat(f.y+6),size:f.size,flip:f.flip});state.floatActive=state.floatCopies.length-1;updateFloat();toast('已复制一份人物，拖动可分开摆放');});
+$('#float-delete').addEventListener('click',()=>{if(state.floatCopies.length<2)return;state.floatCopies.splice(state.floatActive,1);state.floatActive=Math.min(state.floatActive,state.floatCopies.length-1);updateFloat();});
+const moveCopy=dir=>{const i=state.floatActive,j=i+dir;if(j<0||j>=state.floatCopies.length)return;[state.floatCopies[i],state.floatCopies[j]]=[state.floatCopies[j],state.floatCopies[i]];state.floatActive=j;updateFloat();};
+$('#float-up').addEventListener('click',()=>moveCopy(1));$('#float-down').addEventListener('click',()=>moveCopy(-1));
 $('#edit-cutout').addEventListener('click',()=>openCutout());
-const floatEl=$('#float-person');let floatDrag=null;
-floatEl.addEventListener('pointerdown',event=>{const f=pinFloat();if(!f)return;const b=$('#desktop').getBoundingClientRect();floatDrag={pointerId:event.pointerId,dx:event.clientX-b.left-f.x/100*b.width,dy:event.clientY-b.top-f.y/100*b.height};floatEl.setPointerCapture(event.pointerId);floatEl.classList.add('dragging');event.preventDefault();});
-floatEl.addEventListener('pointermove',event=>{if(floatDrag?.pointerId!==event.pointerId)return;const b=$('#desktop').getBoundingClientRect();state.floatX=clampFloat((event.clientX-b.left-floatDrag.dx)/b.width*100);state.floatY=clampFloat((event.clientY-b.top-floatDrag.dy)/b.height*100);updateFloat();});
-const endFloatDrag=()=>{floatDrag=null;floatEl.classList.remove('dragging');};
-floatEl.addEventListener('pointerup',endFloatDrag);floatEl.addEventListener('pointercancel',endFloatDrag);floatEl.addEventListener('lostpointercapture',endFloatDrag);
-floatEl.addEventListener('wheel',event=>{event.preventDefault();const f=pinFloat();if(!f)return;state.floatSize=clampSize(f.size*Math.exp(-event.deltaY*.0015));updateFloat();},{passive:false});
-floatEl.addEventListener('keydown',event=>{const step=event.shiftKey?5:1,moves={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
- if(moves[event.key]){event.preventDefault();pinFloat();state.floatX=clampFloat(state.floatX+moves[event.key][0]);state.floatY=clampFloat(state.floatY+moves[event.key][1]);updateFloat();}
- else if(['+','=','-','_'].includes(event.key)){event.preventDefault();pinFloat();state.floatSize=clampSize(state.floatSize+(['+','='].includes(event.key)?step:-step));updateFloat();}
+const floatRoot=$('#float-layers');let floatDrag=null;
+const pickCopy=event=>{const el=event.target.closest('.float-person');if(!el)return null;const i=Number(el.dataset.index);if(state.floatActive!==i){state.floatActive=i;placeFloat();updateControls();}return el;};
+floatRoot.addEventListener('pointerdown',event=>{const el=pickCopy(event);if(!el)return;const f=pinFloat();if(!f)return;const b=$('#desktop').getBoundingClientRect();floatDrag={pointerId:event.pointerId,el,dx:event.clientX-b.left-f.x/100*b.width,dy:event.clientY-b.top-f.y/100*b.height};el.setPointerCapture(event.pointerId);el.classList.add('dragging');event.preventDefault();});
+floatRoot.addEventListener('pointermove',event=>{if(floatDrag?.pointerId!==event.pointerId)return;const b=$('#desktop').getBoundingClientRect(),c=activeCopy(state);c.x=clampFloat((event.clientX-b.left-floatDrag.dx)/b.width*100);c.y=clampFloat((event.clientY-b.top-floatDrag.dy)/b.height*100);updateFloat();});
+const endFloatDrag=()=>{floatDrag?.el.classList.remove('dragging');floatDrag=null;};
+floatRoot.addEventListener('pointerup',endFloatDrag);floatRoot.addEventListener('pointercancel',endFloatDrag);floatRoot.addEventListener('lostpointercapture',endFloatDrag);
+floatRoot.addEventListener('wheel',event=>{if(!pickCopy(event))return;event.preventDefault();const f=pinFloat();if(!f)return;activeCopy(state).size=clampSize(f.size*Math.exp(-event.deltaY*.0015));updateFloat();},{passive:false});
+floatRoot.addEventListener('keydown',event=>{if(!pickCopy(event))return;const step=event.shiftKey?5:1,moves={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
+ if(moves[event.key]){event.preventDefault();pinFloat();const c=activeCopy(state);c.x=clampFloat(c.x+moves[event.key][0]);c.y=clampFloat(c.y+moves[event.key][1]);updateFloat();}
+ else if(['+','=','-','_'].includes(event.key)){event.preventDefault();pinFloat();const c=activeCopy(state);c.size=clampSize(c.size+(['+','='].includes(event.key)?step:-step));updateFloat();}
 });
 // Cutout dialog: points are stored normalised to the original wallpaper.
 let cutDraft=null,cutSeq=0;
@@ -283,7 +299,7 @@ $('#cutout-add').addEventListener('click',()=>setCutMode(true));$('#cutout-remov
 $('#cutout-undo').addEventListener('click',()=>{cutDraft.points.pop();drawCutout();});
 $('#cutout-clear').addEventListener('click',()=>{cutDraft.points=[];drawCutout();});
 $('#cutout-auto').addEventListener('click',async()=>{$('#cutout-status').textContent='正在识别画面主体…';try{const point=await Cutout.autoPoint(cutDraft.img,cutDraft.key);if(point){cutDraft.points=[point];drawCutout();}else $('#cutout-status').textContent='没有自动找到人物，请直接点击人物。';}catch(error){$('#cutout-status').textContent='自动识别失败：'+error.message;}});
-$('#cutout-apply').addEventListener('click',()=>{const points=cutDraft.points;if(!points.some(p=>p.add)){Object.assign(state,noFloat);}else{state.floatPoints=points;state.floatPerson=true;}$('#cutout-dialog').close();update();if(state.floatPerson)toast('人物已抠出，可在预览中直接拖动');});
+$('#cutout-apply').addEventListener('click',()=>{const points=cutDraft.points;if(!points.some(p=>p.add)){Object.assign(state,noFloat());}else{state.floatPoints=points;state.floatPerson=true;}$('#cutout-dialog').close();update();if(state.floatPerson)toast('人物已抠出，可在预览中直接拖动');});
 // Wallpaper Engine import: list workshop items, then pick a layer, video frame or preview.
 let weItems=[],weUrls=[],weItem=null,weChoice=null;
 function weUrl(blob){const url=URL.createObjectURL(blob);weUrls.push(url);return url;}

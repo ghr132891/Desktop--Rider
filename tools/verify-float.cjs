@@ -28,7 +28,7 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   // 1. Auto cutout on the built-in portrait.
   await page.locator('#float-toggle').check();
   await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:60000});
-  assert.equal(await page.locator('#float-person').isVisible(),true);
+  assert.equal(await page.locator('.float-person').isVisible(),true);
   assert.equal(await page.evaluate(()=>state.floatPoints.length),1);
   assert.equal(await page.locator('#protect-person').isDisabled(),true);
 
@@ -41,14 +41,15 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   assert.ok(fillCheck.orig.some((v,i)=>Math.abs(v-fillCheck.bg[i])>12),'background differs where the person was');
 
   // 3. Drag + wheel move only the layer; export draws it at the same place.
-  const box=await page.locator('#float-person').boundingBox(),desk=await page.locator('#desktop').boundingBox();
+  const box=await page.locator('.float-person').boundingBox(),desk=await page.locator('#desktop').boundingBox();
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2-desk.width*.2,box.y+box.height/2,{steps:4});await page.mouse.up();
-  const moved=await page.evaluate(()=>({x:state.floatX,y:state.floatY,size:state.floatSize}));
+  const moved=await page.evaluate(()=>({x:state.floatCopies[0].x,y:state.floatCopies[0].y,size:state.floatCopies[0].size}));
   assert.ok(Number.isFinite(moved.x)&&Number.isFinite(moved.size));
   await page.mouse.move(box.x+box.width/2-desk.width*.2,box.y+box.height/2);await page.mouse.wheel(0,300);
-  const shrunk=await page.evaluate(()=>state.floatSize);assert.ok(shrunk<moved.size,'wheel down shrinks');
-  await page.locator('#float-person').focus();await page.keyboard.press('ArrowRight');
-  assert.equal(await page.evaluate(()=>state.floatX),Math.round((moved.x+1)*10)/10);
+  await page.waitForFunction(v=>state.floatCopies[0].size<v,moved.size,{timeout:5000}).catch(()=>{}); // wheel events are delivered asynchronously
+  const shrunk=await page.evaluate(()=>state.floatCopies[0].size);assert.ok(shrunk<moved.size,'wheel down shrinks');
+  await page.locator('.float-person').focus();await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(()=>state.floatCopies[0].x),Math.round((moved.x+1)*10)/10);
   const exportCheck=await page.evaluate(async()=>{const s=clone(state),w=800,h=500,on=await wallpaperCanvas(s,w),off=await wallpaperCanvas({...s,floatPerson:false},w);
    const view=await scene(s),f=floatFrame(s,view,w,h),px=(c,x,y)=>[...c.getContext('2d').getImageData(x,y,1,1).data];
    const cx=Math.round(f.left+f.w/2),cy=Math.round(f.top+f.h*.3);return {on:px(on,cx,cy),off:px(off,cx,cy),floatIn:f.w>10&&f.h>10};});
@@ -66,8 +67,17 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
   // 4. Persistence and reset.
   await page.evaluate(()=>persistNow());await page.reload();
   await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:60000});
-  assert.equal(await page.evaluate(()=>state.floatX),Math.round((moved.x+1)*10)/10);
-  await page.locator('#float-reset').click();assert.equal(await page.evaluate(()=>state.floatX),null);
+  assert.equal(await page.evaluate(()=>state.floatCopies[0].x),Math.round((moved.x+1)*10)/10);
+  await page.locator('#float-reset').click();assert.equal(await page.evaluate(()=>state.floatCopies[0].x),null);
+  // 4b. Copies: duplicate on top, move through the stack, export draws both, delete.
+  await page.locator('#float-duplicate').click();await page.waitForFunction(()=>document.querySelectorAll('.float-person').length===2);
+  const dup=await page.evaluate(()=>({n:state.floatCopies.length,active:state.floatActive,z:[...document.querySelectorAll('.float-person')].map(e=>e.style.zIndex),offset:state.floatCopies[1].x-state.floatCopies[0].x}));
+  assert.deepEqual([dup.n,dup.active,dup.z],[2,1,['3','4']]);assert.ok(dup.offset>0,'duplicate is offset from its source');
+  await page.locator('#float-down').click();assert.equal(await page.evaluate(()=>state.floatActive),0,'moving down swaps order and follows the copy');
+  const both=await page.evaluate(async()=>{const s=clone(state),a=await wallpaperCanvas(s,800),b=await wallpaperCanvas({...s,floatCopies:[s.floatCopies[0]]},800),da=a.getContext('2d').getImageData(0,0,800,500).data,db=b.getContext('2d').getImageData(0,0,800,500).data;let diff=0;for(let i=0;i<da.length;i+=4)if(Math.abs(da[i]-db[i])>8)diff++;return diff;});
+  assert.ok(both>500,'export draws the second copy: '+both);
+  await page.locator('.float-person').nth(1).click();assert.equal(await page.evaluate(()=>state.floatActive),1,'clicking a copy makes it active');
+  await page.locator('#float-delete').click();await page.waitForFunction(()=>document.querySelectorAll('.float-person').length===1);assert.equal(await page.evaluate(()=>state.floatCopies.length),1);
 
   // 5. Cutout dialog: removing a region shrinks the selection.
   await page.locator('#edit-cutout').click();await page.locator('#cutout-status').filter({hasText:'已选中'}).waitFor({timeout:30000});
@@ -124,6 +134,6 @@ function pkg(files){const names=Object.keys(files);let offset=0;const table=[pst
    document.querySelector('#we-dialog').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));},[['project.json',fs.readFileSync(path.join(root,'1002','project.json')).toString('base64')],['index.html',Buffer.from('<p>').toString('base64')],['preview.png',png.toString('base64')]]);
   await page.locator('.we-item',{hasText:'测试网页'}).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('PASS: auto cutout, hole fill, keep-original, drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview, file picker / loose files / drop import; no browser errors.');
+  console.log('PASS: auto cutout, hole fill, keep-original, copies (duplicate / reorder / delete), drag/wheel/keyboard, export, persistence, add/remove points, Wallpaper Engine scan, scene composite, PNG + LZ4 + DXT layers, web preview, file picker / loose files / drop import; no browser errors.');
  }finally{await browser.close();fs.rmSync(fixture,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exit(1);});
