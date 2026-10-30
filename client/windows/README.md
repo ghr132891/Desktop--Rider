@@ -6,7 +6,7 @@
 2. **桌面层**：悬浮人物的各份副本、桌面文字等"画在人物之上"的模块，渲染成一张透明 PNG，由一个透明、点击穿透的窗口显示，并挂到 Explorer 的壁纸宿主窗口下——在壁纸之上、桌面图标之下（Wallpaper Engine / Lively 的 WorkerW 方案）。
 3. **托盘与开机启动**：关闭窗口即隐藏到托盘；开机启动用 `--hidden` 静默拉起并恢复上次的桌面层。
 
-目标系统：Windows 11（先行适配），Windows 10 1703 以上也应可用（同一套 API；24H2 的 Progman 结构差异已做分支，但 Win10 需要实测）。本客户端在 macOS 上编写，这里只能做单元测试与 Electron 启动烟测，**真机验证需要在 Windows 上进行**。
+目标系统：Windows 11（先行适配），Windows 10 1703 以上也应可用（同一套 API）。本客户端在 macOS 上编写；系统相关的部分由 GitHub Actions 在真实 Windows 上验证（见「验证」）：Windows Server 2025（Windows 11 24H2 内核）走 Progman 分支、Windows Server 2022（Windows 10 内核）走 WorkerW 分支，两者都确认了按显示器设壁纸、桌面层窗口成为壁纸宿主的子窗口并铺满显示器、重启恢复与清理。Win11 客户端版的托盘、开机启动等交互仍建议真机过一遍。
 
 ## 运行（Windows）
 
@@ -54,6 +54,7 @@ npm run dist
 - 桌面层是静态图片，不随壁纸切换、分辨率变化自动重绘；重新点一次「应用」即可。Explorer 重启（例如资源管理器崩溃）后宿主窗口失效，需要重新应用。
 - 系统壁纸由 Windows 自行持久化；客户端重启只恢复桌面层窗口（读取 `%APPDATA%/desktop-rider-windows/desktop/layers.json`）。
 - 不修改注册表以外的系统设置；开机启动使用 Electron 的登录项接口（`HKCU\...\Run`）。
+- 不要以管理员身份运行：提权进程的窗口无法 `SetParent` 到资源管理器（普通权限）的桌面之下，桥脚本会以「Win32 错误 5」报错并给出提示。
 
 ## 验证
 

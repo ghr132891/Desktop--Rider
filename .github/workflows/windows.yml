@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'client/**'
+      - '!client/windows/README.md'
       - 'core.js'
       - 'app.js'
       - 'cutout.js'
