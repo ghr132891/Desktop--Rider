@@ -24,12 +24,23 @@ function interactive(){
  })().catch(error=>{interactivePromise=null;throw error;});
  return interactivePromise;
 }
+// VIDEO mode of the same selfie model for live wallpapers (modules/live.js): frames with increasing timestamps,
+// the tracker smooths masks between them.
+let videoPromise;
+function videoSegmenter(){
+ if(!videoPromise)videoPromise=(async()=>{
+  const {tasks,files}=await vision();
+  return tasks.ImageSegmenter.createFromOptions(files,{baseOptions:{modelAssetPath:new URL('./assets/models/selfie_segmenter.tflite',self.location.href).href,delegate:'CPU'},runningMode:'VIDEO',outputConfidenceMasks:true,outputCategoryMask:false});
+ })().catch(error=>{videoPromise=null;throw error;});
+ return videoPromise;
+}
 function reply(id,mask){const values=new Float32Array(mask.getAsFloat32Array());self.postMessage({id,width:mask.width,height:mask.height,values},[values.buffer]);}
-let queue=Promise.resolve();
-self.onmessage=({data:{id,bitmap,point}})=>{
+let queue=Promise.resolve(),lastStamp=0;
+self.onmessage=({data:{id,bitmap,point,video,timestamp}})=>{
  queue=queue.then(async()=>{
   try{
-   if(point){const model=await interactive();model.segment(bitmap,{keypoint:point},result=>reply(id,result.confidenceMasks[0]));}
+   if(video){const model=await videoSegmenter();lastStamp=Math.max(lastStamp+1,Math.round(timestamp||0));model.segmentForVideo(bitmap,lastStamp,result=>{const masks=result.confidenceMasks;reply(id,masks[masks.length===1?0:1]);});}
+   else if(point){const model=await interactive();model.segment(bitmap,{keypoint:point},result=>reply(id,result.confidenceMasks[0]));}
    else{const model=await segmenter();model.segment(bitmap,result=>{const masks=result.confidenceMasks;reply(id,masks[masks.length===1?0:1]);});}
   }catch(error){self.postMessage({id,error:String(error.message||error)});}
   finally{bitmap.close();}

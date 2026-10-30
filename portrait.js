@@ -7,6 +7,8 @@ const Portrait = (()=>{
  async function ask(img,point){const bitmap=await createImageBitmap(img);return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,point},[bitmap]);});}
  // Confidence mask of the object under a normalized point (0–1), at model output size.
  function segmentAt(img,x,y){return ask(img,{x,y});}
+ // One video frame (an ImageBitmap, transferred) through the tracker; resolves {width,height,values}.
+ function segmentVideo(bitmap,timestamp){return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,video:true,timestamp},[bitmap]);});}
  async function detect(img,key){
   if(cache.has(key))return cache.get(key);
   const task=(async()=>{const result=await ask(img);
@@ -61,5 +63,5 @@ const Portrait = (()=>{
   }
   ctx.putImageData(pixels,0,0);return {canvas:out,person};
  }
- return {detect,segmentAt,render,placement,clear(){prepared.clear();}};
+ return {detect,segmentAt,segmentVideo,render,placement,clear(){prepared.clear();}};
 })();

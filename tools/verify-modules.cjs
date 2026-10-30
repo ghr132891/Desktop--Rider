@@ -35,7 +35,7 @@ const assert=require('node:assert/strict');
  await page.locator('#reset').click();assert.equal(await page.evaluate(()=>state.modules.note.text),'');await page.waitForFunction(()=>document.querySelector('.note-text').hidden);
  await page.locator('[data-view="saved"]').click();await page.getByRole('button',{name:'载入方案',exact:true}).click();assert.equal(await page.evaluate(()=>state.modules.note.text),'桌面歌词示例');assert.equal(await page.evaluate(()=>state.modules.note.size),8);
  // Sanitising: wrong types fall back, ranges clamp, unknown slices survive.
- assert.deepEqual(await page.evaluate(()=>normalizeState({...state,modules:{note:{text:123,x:999,y:-4,size:'a',color:'red'},future:{keep:1}}}).modules),{live:{enabled:false,name:'',type:'',size:0,width:0,height:0,duration:0,time:0},note:{text:'',x:100,y:0,size:4,color:'#ffffff',shadow:true},future:{keep:1}});
+ assert.deepEqual(await page.evaluate(()=>normalizeState({...state,modules:{note:{text:123,x:999,y:-4,size:'a',color:'red'},future:{keep:1}}}).modules),{live:{enabled:false,person:true,name:'',type:'',size:0,width:0,height:0,duration:0,time:0},note:{text:'',x:100,y:0,size:4,color:'#ffffff',shadow:true},future:{keep:1}});
  // Late registration: mounted at once, below the person (order < 100), drawn under later modules.
  await page.evaluate(()=>{Rider.register({id:'probe',order:50,defaults:{on:true},mount({layer}){layer.dataset.mounted='1';},render({layer,s}){layer.dataset.ran=String(s.modules.probe.on);},draw({ctx,w,h}){ctx.fillStyle='#ff00ff';ctx.fillRect(0,0,w,h*.1);}});});
  assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['live','probe','note']);
