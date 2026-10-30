@@ -27,6 +27,9 @@ async function launch(userData){
  return {app,page};
 }
 const rectOf=o=>({left:o.left,top:o.top,width:o.width,height:o.height});
+// Poll from Node: restoreLayers() runs after the page is up (bridge compile + monitors + attach), and
+// Playwright's waitForFunction does not await a promise-returning predicate.
+async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;while(Date.now()-t0<timeout){last=await page.evaluate(fn);if(last)return last;await page.waitForTimeout(500);}throw new Error('timed out waiting for '+what+'; last value '+JSON.stringify(last));}
 
 (async()=>{
  assert.equal(process.platform,'win32','test/windows.cjs needs Windows; the other OSes run test/smoke.cjs');
@@ -79,8 +82,7 @@ const rectOf=o=>({left:o.left,top:o.top,width:o.width,height:o.height});
   // 4. Restart: layers.json brings the layer back on its own, under the host again.
   await app.close();app=null;
   ({app,page}=await launch(userData));
-  await page.waitForFunction(()=>desktopRider.layers().then(l=>l.length===1&&l[0].attached),null,{timeout:60000});
-  const restored=(await page.evaluate(()=>desktopRider.layers()))[0];log('restored layer',{restored});
+  const restored=(await until(page,async()=>{const l=await desktopRider.layers();return l.length===1&&l[0].attached?l:null;},'the restored layer'))[0];log('restored layer',{restored});
   assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,layer.hwnd,'a new window after restart');
   const info2=await bridge.layerInfo(restored.hwnd);log('restored layer window',info2);
   assert.equal(info2.valid,true);assert.equal(info2.visible,true);assert.equal(info2.parentClass,restored.host==='workerw'?'WorkerW':'Progman');assert.deepEqual(rectOf(info2),rectOf(primary));
