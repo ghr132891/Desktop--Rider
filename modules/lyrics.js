@@ -79,14 +79,18 @@ const LyricsModule={
   bind('#lyr-align','align');bind('#lyr-width','width',t=>Number(t.value));bind('#lyr-x','x',t=>Number(t.value));bind('#lyr-y','y',t=>Number(t.value));
   bind('#lyr-transition','transition');bind('#lyr-duration','duration',t=>Number(t.value));bind('#lyr-next','next',t=>t.checked);bind('#lyr-next-opacity','nextOpacity',t=>Number(t.value));bind('#lyr-trans','trans',t=>t.checked);bind('#lyr-interlude','interlude',t=>t.checked);
   // Preview element: the shared renderer inside a draggable box.
-  const box=document.createElement('div');box.tabIndex=0;box.hidden=true;box.title='拖动移动；方向键微调';box.setAttribute('aria-label','桌面歌词，可拖动');layer.append(box);this.box=box;this.lv=LyricsView.create(box);
+  const box=document.createElement('div');box.tabIndex=0;box.hidden=true;box.title='拖动移动；方向键微调';box.setAttribute('aria-label','桌面歌词，可拖动');layer.append(box);this.box=box;this.layer=layer;this.lv=LyricsView.create(box);
   const clampPct=v=>Math.max(0,Math.min(100,Math.round(v*10)/10));let drag=null;
   box.addEventListener('pointerdown',e=>{const b=api.desktop().getBoundingClientRect(),m=me();drag={id:e.pointerId,dx:e.clientX-b.left-m.x/100*b.width,dy:e.clientY-b.top-m.y/100*b.height};box.setPointerCapture(e.pointerId);box.classList.add('dragging');e.preventDefault();});
   box.addEventListener('pointermove',e=>{if(drag?.id!==e.pointerId)return;const b=api.desktop().getBoundingClientRect(),m=me();m.x=clampPct((e.clientX-b.left-drag.dx)/b.width*100);m.y=clampPct((e.clientY-b.top-drag.dy)/b.height*100);changed();});
   const end=()=>{box.classList.remove('dragging');drag=null;};box.addEventListener('pointerup',end);box.addEventListener('pointercancel',end);box.addEventListener('lostpointercapture',end);
   box.addEventListener('keydown',e=>{const step=e.shiftKey?5:1,moves={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};if(!moves[e.key])return;e.preventDefault();const m=me();m.x=clampPct(m.x+moves[e.key][0]);m.y=clampPct(m.y+moves[e.key][1]);changed();});
   this.start=performance.now();const tick=()=>{this.tick();requestAnimationFrame(tick);};requestAnimationFrame(tick);
+  this.onView({view:api.view,api});
  },
+ // Editing mode: only while the 桌面歌词 view is open does the box take the pointer — and then it sits above every other
+ // floating thing (person copies, layers, zones, dock, divider handles), which become click-through (styles.css).
+ onView({view,api}){const editing=view==='lyrics';api.desktop().classList.toggle('lyrics-editing',editing);this.box?.classList.toggle('editing',editing);if(this.layer)this.layer.style.zIndex=editing?'34':'18';if(!editing&&this.box)this.box.blur();},
  sync({s,panel}){const m=s.modules.lyrics,q=sel=>panel.querySelector(sel),set=(sel,v)=>{const el=q(sel);if(document.activeElement!==el)el.value=v;};
   q('#lyr-enabled').checked=m.enabled;set('#lyr-display',m.display);set('#lyr-stage-lines',m.stageLines);q('.lyr-stage-only').hidden=m.display!=='stage';set('#lyr-mode',m.mode);set('#lyr-provider',m.provider);set('#lyr-query',m.query);set('#lyr-lrc',m.lrc);set('#lyr-offset',m.offset);q('#lyr-offset-value').textContent=(m.offset>0?'+':'')+m.offset.toFixed(1)+' s';q('#lyr-demo').checked=m.demo;
   set('#lyr-font',m.font);set('#lyr-font-custom',m.customFont);q('.lyr-font-custom').hidden=m.font!=='custom';set('#lyr-weight',m.weight);set('#lyr-size',m.size);q('#lyr-size-value').textContent=m.size+'%';set('#lyr-color',m.color);q('#lyr-color-value').textContent=m.color.toUpperCase();

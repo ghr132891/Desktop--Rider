@@ -63,7 +63,13 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 .layer-box{position:absolute;pointer-events:none;border:2px solid #4278dfcc;outline:1px solid #ffffff99;margin:-2px;transform-origin:center}.layer-box.locked{border-style:dashed}.lb-handle{position:absolute;width:11px;height:11px;border-radius:50%;background:#fff;border:2px solid #4278df;box-shadow:0 1px 4px #0b182c55;pointer-events:auto;touch-action:none;margin:-6px}.lb-handle[data-h=nw]{left:0;top:0;cursor:nwse-resize}.lb-handle[data-h=n]{left:50%;top:0;cursor:ns-resize}.lb-handle[data-h=ne]{left:100%;top:0;cursor:nesw-resize}.lb-handle[data-h=e]{left:100%;top:50%;cursor:ew-resize}.lb-handle[data-h=se]{left:100%;top:100%;cursor:nwse-resize}.lb-handle[data-h=s]{left:50%;top:100%;cursor:ns-resize}.lb-handle[data-h=sw]{left:0;top:100%;cursor:nesw-resize}.lb-handle[data-h=w]{left:0;top:50%;cursor:ew-resize}.lb-handle.lb-rotate{left:50%;top:-22px;cursor:grab;background:#4278df;border-color:#fff}.lb-handle.lb-rotate:before{content:"";position:absolute;left:4px;top:11px;width:1px;height:12px;background:#ffffffb3}.desktop.clean .layer-box{opacity:0;pointer-events:none}
 
 /* 桌面歌词 preview box (renderer + shared styles in lyrics-view.js / lyrics-view.css) */
-.lyrics-box{cursor:grab;touch-action:none}.lyrics-box.dragging{cursor:grabbing}.lyrics-box:focus-visible{outline:2px dashed #fff;outline-offset:3px}.desktop.clean .lyrics-box:focus-visible{outline:none}
+.lyrics-box{cursor:grab;touch-action:none;pointer-events:none}.lyrics-box.dragging{cursor:grabbing}.lyrics-box:focus-visible{outline:2px dashed #fff;outline-offset:3px}.desktop.clean .lyrics-box:focus-visible{outline:none}
+/* 桌面歌词 editing mode (sidebar view open): the lyrics layer rises above every other floating element, those become
+   click-through, the box shows a dashed frame and a generous drag area. Elsewhere the lyrics are click-through. */
+.desktop.lyrics-editing .lyrics-box{pointer-events:auto;outline:1px dashed rgba(255,255,255,.75);outline-offset:10px;border-radius:3px}
+.desktop.lyrics-editing .lyrics-box::before{content:'';position:absolute;inset:-14px -20px;cursor:grab}
+.desktop.lyrics-editing .lyrics-box.dragging::before{cursor:grabbing}
+.desktop.lyrics-editing :is(.float-person,#float-outline,.live-copies,.layer-item,.layer-box,.desktop-zone,.desktop-dock,.desktop-top,.split-handle,.split-endpoint,.wallpaper-piece,.note-text){pointer-events:none!important}
 #lyr-lrc{width:100%;min-height:96px;font:inherit;font-size:11px;line-height:1.5;border:1px solid #e0e6f0;border-radius:6px;padding:6px 8px;resize:vertical;color:#42556e;background:#fbfcfe}
 #module-lyrics .layers-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:11px;color:#66778d}#module-lyrics .layers-row select{flex:1;max-width:62%}
 #module-lyrics details.shape-options{margin-top:12px}
