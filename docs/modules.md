@@ -65,7 +65,7 @@ Rider.register({
 - **桌面歌词**：从 `note.js` 复制，`order` 保持 200；状态存样式与位置，歌词文本不存方案。播放源（本地音频元素、系统播放器接口）在 `mount` 里建立，用自己的计时器更新 `layer` 里的文字；`draw` 画当前行以便导出截图。真正读取系统正在播放的曲目需要原生客户端提供接口，模块里预留一个 `source` 适配器即可。
 - **文件管理**：声明 `view:{page:true}`，`page` 放目录浏览，`panel` 放筛选与整理选项；目录句柄与索引放 `Rider.storage('files')`，真实文件不进方案；通过 `api.createItem` / `api.moveItem` 把文件映射为分区里的快捷项。浏览器内只能读取用户选择的目录（`showDirectoryPicker`），移动、删除文件要等原生客户端。
 - **时钟 / 天气 / 便签**：与桌面文字同构，各自一个模块文件。
-- **逐帧视觉处理**（参考 `modules/live.js` 的逐帧人物提取）：`Portrait.segmentVideo(bitmap,timestamp)` 把一帧（缩到 384 px 宽的 ImageBitmap）送进 Worker 里 VIDEO 模式的人像模型，返回 `{width,height,values}` 置信度；一次只送一帧，拿到结果再送下一帧。合成在主线程 canvas 上做（`destination-in` 套蒙版），悬浮副本的静态 `<img>` 保留用于拖动与命中，自己的画布叠在 `z-index 15`（副本之上、选中框之下）。
+- **逐帧视觉处理**（参考 `modules/live.js` 的逐帧人物提取）：`Portrait.segmentVideo(bitmap,timestamp)` 把一帧（缩到 384 px 宽的 ImageBitmap）送进 Worker 里 VIDEO 模式的人像模型，返回 `{width,height,values}` 置信度；一次只送一帧，拿到结果再送下一帧。合成在主线程 canvas 上做（`destination-in` 套蒙版；蒙版要与送检的那一帧一起用，所以先 `createImageBitmap(video)` 留住全分辨率帧，再缩小送 Worker；动态背景用一张指数平均的背景板：非人物区域逐帧从视频更新，人物区域保持静帧补全），悬浮副本的静态 `<img>` 保留用于拖动与命中，自己的画布叠在 `z-index 15`（副本之上、选中框之下）。
 - **跟随壁纸分区的图层**（参考 `modules/live.js` 动态壁纸）：`order < 100`，监听 `render` 事件后读取 `#piece-left / #piece-right` 的 `clipPath`、`backgroundSize`、`backgroundPosition`，让自己的画布与分区逐像素对齐；大文件放 IndexedDB，方案里只存元数据；给客户端提供 `exportFor(s,w,h)` 之类的方法（不要用保留钩子名）返回按显示器分辨率算好的几何。
 - **原生客户端**：把 `Rider.api` 之外的系统能力（设壁纸、枚举显示器、监听播放器）做成单独的模块或 `api` 扩展，界面层无需改动。
 

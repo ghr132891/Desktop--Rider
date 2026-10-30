@@ -87,7 +87,7 @@ Rider.register({
  // ---- per-frame person extraction ----
  trackScene(s){const key=this.api.floating(s)?this.api.source(s)+'#'+JSON.stringify(s.floatPoints)+(s.floatKeepOriginal?'#keep':''):'';if(key===this.sceneKey)return;this.sceneKey=key;this.cutScene=null;this.resetPerson();
   if(key)this.api.scene(s).then(view=>{if(this.sceneKey!==key)return;this.cutScene=view.cut?view:null;this.api.scheduleRender();}).catch(()=>{});},
- resetPerson(){this.personReady=this.patchReady=false;this.masks=0;this.personError='';},
+ resetPerson(){this.personReady=this.patchReady=this.plateReady=false;this.smooth=null;this.masks=0;this.personError='';},
  syncPerson(s){
   this.trackScene(s);const v=this.video,m=s.modules.live;
   const active=this.pieces.length>0&&m.person&&this.api.floating(s)&&!!this.cutScene?.cut&&typeof Portrait!=='undefined'&&!this.personError;
@@ -97,28 +97,45 @@ Rider.register({
   const b=this.cutScene.cut.box,x0=Math.max(0,b.x-b.w*.5),y0=Math.max(0,b.y-b.h*.5),x1=Math.min(1,b.x+b.w*1.5),y1=Math.min(1,b.y+b.h*1.5);
   const W={x:Math.floor(x0*v.videoWidth),y:Math.floor(y0*v.videoHeight)};W.w=Math.ceil(x1*v.videoWidth)-W.x;W.h=Math.ceil(y1*v.videoHeight)-W.y;
   this.ps=Math.min(1,1280/Math.max(W.w,W.h));const cw=Math.max(1,Math.round(W.w*this.ps)),ch=Math.max(1,Math.round(W.h*this.ps));
-  for(const c of [this.personCanvas,this.patchCanvas])if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;this.personReady=this.patchReady=false;}
+  for(const c of [this.personCanvas,this.patchCanvas])if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;this.personReady=this.patchReady=this.plateReady=false;}
   this.win=W;this.person=true;this.pump();
  },
  // Frames go to the worker one at a time; each mask refreshes the moving person and the cover patch.
  async pump(){if(this.pumping)return;this.pumping=true;
   try{while(this.person&&!document.hidden&&this.pieces.length){const v=this.video;
    if(v.readyState<2||v.paused){await new Promise(r=>setTimeout(r,80));continue;}
-   const t0=performance.now();let result;
-   try{const bitmap=await createImageBitmap(v,{resizeWidth:Math.min(384,v.videoWidth),resizeQuality:'low'});result=await Portrait.segmentVideo(bitmap,Math.round(t0));}
-   catch(error){this.personError=error.message||'人物识别失败';this.api.scheduleRender();break;}
-   if(!this.person)break;this.applyMask(result);this.maskMs=performance.now()-t0;if(++this.masks%30===1)this.status(this.api.state);
+   const t0=performance.now();let result,frame=null;
+   // The full-resolution frame is kept so the mask is composited onto the very frame it was computed from.
+   try{frame=await createImageBitmap(v);const small=await createImageBitmap(frame,{resizeWidth:Math.min(384,frame.width),resizeQuality:'low'});result=await Portrait.segmentVideo(small,Math.round(t0));}
+   catch(error){frame?.close();this.personError=error.message||'人物识别失败';this.api.scheduleRender();break;}
+   if(this.person)this.applyMask(result,frame);frame.close();if(!this.person)break;
+   this.maskMs=performance.now()-t0;if(++this.masks%30===1)this.status(this.api.state);
    await new Promise(r=>requestAnimationFrame(r));}}
   finally{this.pumping=false;}},
- applyMask({width:mw,height:mh,values}){
-  const mp=this.maskPerson??=document.createElement('canvas'),mq=this.maskPatch??=document.createElement('canvas');
-  if(mp.width!==mw||mp.height!==mh){mp.width=mq.width=mw;mp.height=mq.height=mh;this.imgP=mp.getContext('2d').createImageData(mw,mh);this.imgQ=mq.getContext('2d').createImageData(mw,mh);for(const d of [this.imgP.data,this.imgQ.data])for(let i=0;i<d.length;i+=4)d[i]=d[i+1]=d[i+2]=255;}
-  const dp=this.imgP.data,dq=this.imgQ.data,smooth=(c,lo,span)=>{const t=Math.max(0,Math.min(1,(c-lo)/span));return Math.round(t*t*(3-2*t)*255);};
-  for(let i=0;i<values.length;i++){dp[i*4+3]=smooth(values[i],.35,.35);dq[i*4+3]=smooth(values[i],.1,.3);} // the cover is wider than the person so no rim is left behind
-  mp.getContext('2d').putImageData(this.imgP,0,0);mq.getContext('2d').putImageData(this.imgQ,0,0);
-  const v=this.video,W=this.win,ps=this.ps,vw=v.videoWidth*ps,vh=v.videoHeight*ps,ox=-W.x*ps,oy=-W.y*ps;
-  const pc=this.personCanvas,px=pc.getContext('2d');px.globalCompositeOperation='source-over';px.clearRect(0,0,pc.width,pc.height);px.drawImage(v,ox,oy,vw,vh);px.globalCompositeOperation='destination-in';px.filter='blur(1px)';px.drawImage(mp,ox,oy,vw,vh);px.filter='none';px.globalCompositeOperation='source-over';this.personReady=true;
-  if(!this.keepOriginal&&this.cutScene){const qc=this.patchCanvas,qx=qc.getContext('2d');qx.globalCompositeOperation='source-over';qx.clearRect(0,0,qc.width,qc.height);qx.drawImage(this.cutScene.img,ox,oy,vw,vh);qx.globalCompositeOperation='destination-in';qx.filter='blur(2px)';qx.drawImage(mq,ox,oy,vw,vh);qx.filter='none';qx.globalCompositeOperation='source-over';this.patchReady=true;}
+ // Masks: temporal smoothing against the previous frame, then three alpha maps from one confidence field —
+ // person (tight, for the moving copy), cover (wider, hides the rim at the original spot) and exclusion
+ // (widest, keeps the person out of the learned background).
+ applyMask({width:mw,height:mh,values},frame){
+  const n=values.length;if(!this.smooth||this.smooth.length!==n){this.smooth=new Float32Array(values);}else{const sm=this.smooth;for(let i=0;i<n;i++)sm[i]=sm[i]*.3+values[i]*.7;}
+  const maps=this.maps??={person:document.createElement('canvas'),cover:document.createElement('canvas'),exclude:document.createElement('canvas')};
+  if(maps.person.width!==mw||maps.person.height!==mh){for(const k in maps){maps[k].width=mw;maps[k].height=mh;const d=maps[k].getContext('2d').createImageData(mw,mh);for(let i=0;i<d.data.length;i+=4)d.data[i]=d.data[i+1]=d.data[i+2]=255;maps[k].img=d;}}
+  const dp=maps.person.img.data,dq=maps.cover.img.data,dx=maps.exclude.img.data,sm=this.smooth,curve=(c,lo,span)=>{const t=Math.max(0,Math.min(1,(c-lo)/span));return Math.round(t*t*(3-2*t)*255);};
+  for(let i=0;i<n;i++){const c=sm[i];dp[i*4+3]=curve(c,.4,.3);dq[i*4+3]=curve(c,.12,.28);dx[i*4+3]=curve(c,.04,.16);}
+  for(const k in maps)maps[k].getContext('2d').putImageData(maps[k].img,0,0);
+  const W=this.win,ps=this.ps,vw=frame.width*ps,vh=frame.height*ps,ox=-W.x*ps,oy=-W.y*ps;
+  const mask=(ctx,map,blur)=>{ctx.globalCompositeOperation='destination-in';ctx.imageSmoothingQuality='high';ctx.filter=`blur(${blur}px)`;ctx.drawImage(map,ox,oy,vw,vh);ctx.filter='none';ctx.globalCompositeOperation='source-over';};
+  // Moving person: this frame inside the capture window, kept where the tight mask says person.
+  const pc=this.personCanvas,px=pc.getContext('2d');px.globalCompositeOperation='source-over';px.clearRect(0,0,pc.width,pc.height);px.drawImage(frame,ox,oy,vw,vh);mask(px,maps.person,.6);this.personReady=true;
+  if(this.keepOriginal||!this.cutScene)return;
+  // Learned background plate: starts as the inpainted still; wherever this frame shows no person (widest mask,
+  // blurred outward) the plate drifts towards the live video, so clouds, water and light keep moving behind the
+  // person and only the ground the person never leaves stays inpainted.
+  const plate=this.plate??=document.createElement('canvas'),scratch=this.scratch??=document.createElement('canvas');
+  if(plate.width!==pc.width||plate.height!==pc.height||!this.plateReady){plate.width=scratch.width=pc.width;plate.height=scratch.height=pc.height;const b=plate.getContext('2d');b.globalCompositeOperation='source-over';b.drawImage(this.cutScene.img,ox,oy,vw,vh);this.plateReady=true;this.plateFrames=0;}
+  const sx=scratch.getContext('2d');sx.globalCompositeOperation='source-over';sx.clearRect(0,0,scratch.width,scratch.height);sx.drawImage(frame,ox,oy,vw,vh);sx.globalCompositeOperation='destination-out';sx.imageSmoothingQuality='high';sx.filter='blur(4px)';sx.drawImage(maps.exclude,ox,oy,vw,vh);sx.filter='none';sx.globalCompositeOperation='source-over';
+  const bx=plate.getContext('2d');bx.globalAlpha=this.plateFrames<8?.6:.25;bx.drawImage(scratch,0,0);bx.globalAlpha=1;this.plateFrames++;
+  // Cover for the original spot: the plate where the wider mask says person.
+  const qc=this.patchCanvas,qx=qc.getContext('2d');qx.globalCompositeOperation='source-over';qx.clearRect(0,0,qc.width,qc.height);qx.drawImage(plate,0,0);mask(qx,maps.cover,2);this.patchReady=true;
  },
  // Every frame: cover the original spot on the pieces, and mirror each static copy with the moving person.
  drawPerson(){

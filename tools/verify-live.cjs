@@ -49,7 +49,7 @@ const assert=require('node:assert/strict');
  const made=await page.evaluate(async()=>{const img=await loadImage(source()),point=await Cutout.autoPoint(img,source()),cut=await Cutout.separate(img,source(),[point]),bg=await loadImage(cut.backgroundUrl);
   const W=img.naturalWidth,H=img.naturalHeight,box={x:cut.box.x*W,y:cut.box.y*H,w:cut.box.w*W,h:cut.box.h*H};
   const blob=await new Promise(resolve=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm',videoBitsPerSecond:8e6});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
-   let t=0;const timer=setInterval(()=>{const k=t/90*6.283;ctx.drawImage(bg,0,0,W,H);ctx.drawImage(cut.cutout,box.x+Math.sin(k)*W*.08,box.y-Math.abs(Math.sin(k*3))*H*.01,box.w,box.h);if(++t>=90){clearInterval(timer);rec.stop();}},33);rec.start();});
+   let t=0;const timer=setInterval(()=>{const k=t/90*6.283;ctx.drawImage(bg,0,0,W,H);if(t>=30){ctx.fillStyle='rgba(255,0,0,.4)';ctx.fillRect(0,0,W,H);} /* the background turns red after 1 s: the still (frame 0) never sees it, a learned plate must */ ctx.drawImage(cut.cutout,box.x+Math.sin(k)*W*.08,box.y-Math.abs(Math.sin(k*3))*H*.01,box.w,box.h);if(++t>=90){clearInterval(timer);rec.stop();}},33);rec.start();});
   await Rider.modules.find(m=>m.id==='live').useFile(new File([blob],'walking.webm',{type:'video/webm'}),{time:0});return {size:blob.size,box:cut.box};});
  assert.ok(made.size>20000);await page.waitForFunction(()=>state.modules.live.enabled&&state.modules.live.name==='walking.webm');
  await page.locator('#float-toggle').check();await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:90000});
@@ -68,6 +68,16 @@ const assert=require('node:assert/strict');
  assert.ok(person.dist.every(x=>x<48),'original spot shows the inpainted background: '+JSON.stringify(person.dist));
  assert.ok(person.opaque>50&&person.clear>50,'moving copy holds a masked person: '+JSON.stringify(person));assert.equal(person.copies,1);assert.equal(person.hiddenImg,'0');assert.match(person.desktop,/live-person/);assert.equal(person.covers,true,'copy canvas encloses the static copy');
  assert.match(person.status,/逐帧提取人物，每帧 \d+ ms/);assert.ok(person.maskMs<400,'segmentation keeps up: '+person.maskMs+' ms');
+ // Learned background: where the person never stands, the plate follows the (now red) video instead of the still.
+ await page.waitForFunction(()=>Rider.modules.find(x=>x.id==='live').plateFrames>45,null,{timeout:30000});
+ const plate=await page.evaluate(async()=>{const m=Rider.modules.find(x=>x.id==='live'),view=await scene(clone(state)),b=view.cut.box,W=m.win,v=m.video,ps=m.ps;
+  const bgc=document.createElement('canvas');bgc.width=view.img.naturalWidth;bgc.height=view.img.naturalHeight;bgc.getContext('2d').drawImage(view.img,0,0);
+  const u=Math.max(W.x/v.videoWidth+.02,b.x-.45*b.w),w=b.y+.5*b.h; // inside the capture window, left of the person's walk
+  const p=m.plate.getContext('2d').getImageData(Math.round((u*v.videoWidth-W.x)*ps),Math.round((w*v.videoHeight-W.y)*ps),1,1).data,c=bgc.getContext('2d').getImageData(Math.round(u*bgc.width),Math.round(w*bgc.height),1,1).data;
+  const centre=m.plate.getContext('2d').getImageData(Math.round(((b.x+b.w*.5)*v.videoWidth-W.x)*ps),Math.round(((b.y+b.h*.5)*v.videoHeight-W.y)*ps),1,1).data,cc=bgc.getContext('2d').getImageData(Math.round((b.x+b.w*.5)*bgc.width),Math.round((b.y+b.h*.5)*bgc.height),1,1).data;
+  return {revealed:{plate:[...p].slice(0,3),still:[...c].slice(0,3)},occluded:{plate:[...centre].slice(0,3),still:[...cc].slice(0,3)},frames:m.plateFrames};});
+ assert.ok(plate.revealed.plate[0]-plate.revealed.still[0]>20&&plate.revealed.plate[1]<=plate.revealed.still[1]+6,'plate learned the red background where the person never stands: '+JSON.stringify(plate));
+ assert.ok(Math.hypot(...plate.occluded.plate.map((x,i)=>x-plate.occluded.still[i]))<40,'behind the person the plate still holds the inpainted still: '+JSON.stringify(plate));
  // Keep-original: no cover, the video person stays; switch off: back to the static copy.
  await page.locator('#float-keep').check();await page.waitForFunction(()=>Rider.modules.find(x=>x.id==='live').keepOriginal===true);await page.waitForTimeout(500);
  const kept=await page.evaluate(async()=>{const m=Rider.modules.find(x=>x.id==='live'),view=await scene(clone(state)),b=view.cut.box,p=m.pieces[0];const d=p.c.getContext('2d').getImageData(Math.round((p.x+(b.x+b.w*.5)*p.w)*p.dpr),Math.round((p.y+(b.y+b.h*.5)*p.h)*p.dpr),1,1).data;const bgc=document.createElement('canvas');bgc.width=view.img.naturalWidth;bgc.height=view.img.naturalHeight;bgc.getContext('2d').drawImage(view.img,0,0);const c=bgc.getContext('2d').getImageData(Math.round((b.x+b.w*.5)*bgc.width),Math.round((b.y+b.h*.5)*bgc.height),1,1).data;return Math.hypot(d[0]-c[0],d[1]-c[1],d[2]-c[2]);});
@@ -82,5 +92,5 @@ const assert=require('node:assert/strict');
  await page.waitForFunction(()=>!state.modules.live.name&&document.querySelectorAll('.live-piece:not([hidden])').length===0);
  assert.equal(await page.evaluate(()=>Rider.modules.find(x=>x.id==='live').store('get')),null);assert.ok(await page.evaluate(()=>!!state.customImage));
  assert.deepEqual(errors,[]);await browser.close();
- console.log('PASS: live wallpaper imports a video via the file input, captures the still, mirrors both pieces (clip + placement) with advancing frames, pauses on switch / person-protect / reduced motion rules, exports a client plan, survives reload via IndexedDB, per-frame person extraction (moving copy, inpainted cover at the original spot, keep-original, switch), removes cleanly; no page errors.');
+ console.log('PASS: live wallpaper imports a video via the file input, captures the still, mirrors both pieces (clip + placement) with advancing frames, pauses on switch / person-protect / reduced motion rules, exports a client plan, survives reload via IndexedDB, per-frame person extraction (moving copy, learned background plate that follows the video where the person is absent and keeps the inpainted still where not, keep-original, switch), removes cleanly; no page errors.');
 })().catch(e=>{console.error(e);process.exit(1)});
