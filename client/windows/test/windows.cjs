@@ -81,6 +81,24 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.screenshot({path:path.join(OUT,'2-client-view.png')});
   assert.deepEqual(errors,[],'no page errors');
 
+  // 3b. 分区画面露白 on the real desktop: the left piece pushed right bares a strip at the left edge. fill=gap → the
+  //     PNG Windows shows carries the gap colour there; fill=extend → 本机扩图 rebuilds the strip from the picture (the
+  //     export awaits the inpaint worker at the monitor's aspect); cover back on → the clamp keeps the picture over it.
+  const GAP=[233,239,244],isGap=p=>p[0]===GAP[0]&&p[1]===GAP[1]&&p[2]===GAP[2];
+  const strip=file=>app.evaluate(({nativeImage},file)=>{const img=nativeImage.createFromPath(file),{width,height}=img.getSize(),b=img.toBitmap();return [.2,.5,.8].map(f=>{const i=(Math.round(height*f)*width+Math.round(width*.03))*4;return [b[i+2],b[i+1],b[i],b[i+3]];});},file);
+  const applyPiece=async patch=>{await page.evaluate(patch=>{Object.assign(state.pieces[0],patch);update({custom:false});document.querySelector('#client-status').textContent='';},patch);
+   await page.locator('.client-monitor').nth(primary.index).click();await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
+   const st=await page.locator('#client-status').textContent();assert.match(st,/^已应用到/,st);const file=await bridge.getWallpaper(primary.id);return {file:path.basename(file),pixels:await strip(file),piece:await page.evaluate(()=>({cover:state.pieces[0].cover,dx:state.pieces[0].dx,fill:state.pieces[0].fill}))};};
+  const bare=await applyPiece({cover:false,dx:12,dy:0,zoom:100,fill:'gap'});log('bare strip · gap colour',bare);
+  assert.ok(bare.pixels.every(isGap),'cover off + fill=gap: the left strip of the wallpaper Windows shows is the gap colour');
+  const extended=await applyPiece({fill:'extend'});log('bare strip · 本机扩图',extended);
+  assert.ok(extended.pixels.every(p=>p[3]===255&&!isGap(p)),'fill=extend: the strip is rebuilt from picture texture');
+  await hideMain(app);await page.waitForTimeout(1500);await screenshot('2b-extended.png');await showMain(app);
+  const covered=await applyPiece({cover:true});log('不露白 back on',covered);
+  assert.ok(covered.pixels.every(p=>p[3]===255&&!isGap(p)),'cover on: the picture covers the strip again');
+  assert.ok(Math.abs(covered.piece.dx)<.1,'the offset snaps back to what the clamp allows: '+covered.piece.dx);
+  assert.deepEqual(errors,[],'no page errors after the fill steps');
+
   // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
    rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
@@ -123,6 +141,6 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, restored it after a restart and cleared it. Screenshots in ${OUT}`;
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
  console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});

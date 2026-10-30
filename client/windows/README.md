@@ -43,7 +43,7 @@ npm run dist
 | `../../modules/client.js` | 网页侧模块，只有在 `window.desktopRider` 存在时注册 |
 | `test/lib.test.cjs` | 单元测试（任何系统）：参数构造、句柄转换、JSON 解析、静态服务器 |
 | `test/smoke.cjs` | 用 Playwright 启动真实 Electron：页面加载、桥存在、显示器列表、非 Windows 下应用失败并提示 |
-| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
+| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再把左侧分区画面推出露白，分别以间隙色、本机扩图、重新开启不露白应用，用 `nativeImage` 读系统正在显示的 PNG 左缘像素核对填充结果；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
