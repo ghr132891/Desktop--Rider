@@ -104,6 +104,29 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.ok(Math.abs(covered.piece.dx)<2,'the offset snaps back to what the clamp allows (from '+push+'): '+covered.piece.dx);
   assert.deepEqual(errors,[],'no page errors after the fill steps');
 
+  // 3c. A video layer (modules/layers.js) plays in the layer window with its own frame and look: a 2 s WebM whose colour
+  //     cycles becomes a layer above the person at a known spot (rotated, rounded); after applying, the layer window's
+  //     canvas changes at the clip's centre between two reads while the wallpaper beside it stays put.
+  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=160;c.height=160;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
+   rec.onstop=()=>Rider.modules.find(m=>m.id==='layers').addVideo(new File([new Blob(chunks)],'cycle.webm',{type:'video/webm'})).then(resolve,reject);
+   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
+  await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers'),it=m.me().items.at(-1);Object.assign(it,{x:75,y:25,w:20,h:24,above:true,rotate:15,radius:20,blend:'normal',opacity:100});m.changed();});
+  await page.waitForFunction(()=>document.querySelectorAll('.layer-item video').length===1&&!document.querySelector('.layer-item video').paused,null,{timeout:30000});log('video layer added',{item:await page.evaluate(()=>({...state.modules.layers.items.at(-1)}))});
+  await page.evaluate(()=>{document.querySelector('#client-status').textContent='';});await page.locator('.client-monitor').nth(primary.index).click();
+  await page.waitForFunction(()=>/^(已应用到显示器 \d+（含动态图层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
+  const clipStatus=await page.locator('#client-status').textContent();log('clip apply status',{status:clipStatus});assert.match(clipStatus,/（含动态图层）$/);
+  const clipLayers=await page.evaluate(()=>desktopRider.layers());log('clip layers',{layers:clipLayers});assert.equal(clipLayers.length,1);assert.equal(clipLayers[0].clips,1);assert.equal(clipLayers[0].live,false);
+  const clipPlaying=await untilPlaying(app);log('clip layer playing',clipPlaying);assert.ok(clipPlaying.frames>5&&!clipPlaying.paused,'the layer window decodes and paints the clip');
+  const layerWin=()=>app.windows().find(w=>w.url().includes('layer.html'));
+  const readCanvas=()=>layerWin().evaluate(()=>{const c=document.getElementById('live'),x=c.getContext('2d'),px=(fx,fy)=>[...x.getImageData(Math.round(c.width*fx),Math.round(c.height*fy),1,1).data];return {clip:px(.75,.25),beside:px(.6,.25),clips:window.__clips.length,playing:window.__clips.every(v=>!v.paused&&v.readyState>=2),size:[c.width,c.height]};});
+  const readA=await readCanvas();await page.waitForTimeout(900);const readB=await readCanvas();log('clip canvas reads',{readA,readB});
+  assert.deepEqual(readA.size,[primary.width,primary.height]);assert.equal(readA.clips,1);assert.ok(readA.playing,'clip video is playing in the layer window');
+  assert.ok(readA.clip[3]===255&&readB.clip[3]===255&&readA.clip.slice(0,3).some((v,i)=>Math.abs(v-readB.clip[i])>24),'the clip\'s centre changes between frames: '+JSON.stringify([readA.clip,readB.clip]));
+  assert.deepEqual(readA.beside,readB.beside,'the wallpaper beside the clip is still');
+  await hideMain(app);await page.waitForTimeout(1500);await screenshot('2c-clip.png');await showMain(app);
+  await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers');m.remove(m.me().items.at(-1));});await page.waitForFunction(()=>state.modules.layers.items.length===0);
+  assert.deepEqual(errors,[],'no page errors after the clip step');
+
   // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
    rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
@@ -146,6 +169,6 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
  console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});

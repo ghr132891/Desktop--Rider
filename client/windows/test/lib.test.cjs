@@ -54,3 +54,16 @@ test('live wallpaper payload is validated before anything is written',()=>{
  assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,width:1.5}}),/几何/);
  assert.throws(()=>checkLive(null),/无效/);
 });
+
+test('video layer payload is validated before anything is written',()=>{
+ const {checkClips}=require('../lib/live');
+ const clip={name:'c',type:'video/webm',bytes:new Uint8Array([1,2]).buffer,x:100,y:50,w:200,h:100,rotate:10,flipX:true,opacity:80,blur:2,hue:0,saturate:100,brightness:100,radius:5,blend:'multiply',fit:'cover',above:true};
+ assert.deepEqual(checkClips(undefined),[]);assert.deepEqual(checkClips([]),[]);
+ const [ok]=checkClips([clip]);assert.equal(ok.ext,'webm');assert.equal(ok.bytes.length,2);assert.equal(ok.item.blend,'multiply');assert.equal(ok.item.above,true);assert.equal(ok.item.flipX,true);assert.equal('bytes' in ok.item,false);
+ assert.throws(()=>checkClips([{...clip,bytes:new ArrayBuffer(0)}]),/缺少数据/);
+ assert.throws(()=>checkClips([{...clip,w:0}]),/几何/);
+ assert.throws(()=>checkClips([{...clip,blend:'hue'}]),/样式/);
+ assert.throws(()=>checkClips([{...clip,fit:'stretch'}]),/样式/);
+ assert.throws(()=>checkClips(Array.from({length:7},()=>clip)),/最多/);
+ assert.throws(()=>checkClips('x'),/无效/);
+});

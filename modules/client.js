@@ -42,9 +42,11 @@ if(window.desktopRider)Rider.register({
  // Live wallpaper (modules/live.js): the video plus where each piece goes on this monitor; null when not playing.
  async renderFor(m){const api=this.api,s={...api.clone(api.state),aspect:m.width/m.height};const background=await api.wallpaperCanvas(s,m.width,{layers:'background'}),overlay=await api.wallpaperCanvas(s,m.width,{layers:'overlay'});
   const liveModule=Rider.modules.find(x=>x.id==='live'),live=liveModule&&typeof liveModule.exportFor==='function'?await liveModule.exportFor(s,m.width,m.height):null;
-  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null,live};},
+  // Video layers (modules/layers.js) play in the layer window too: the files plus their frames / looks at this monitor's size.
+  const layersModule=Rider.modules.find(x=>x.id==='layers'),clips=layersModule&&typeof layersModule.exportClips==='function'?await layersModule.exportClips(s,m.width,m.height):[];
+  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null,live,clips};},
  async apply(m){if(this.busy)return;this.busy=true;this.$('#client-monitors').classList.add('busy');
-  try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.live?'（动态壁纸）':result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
+  try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.live?'（动态壁纸）':result.clips?'（含动态图层）':result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
   catch(error){const why=this.reason(error);this.say('应用失败：'+why);this.api.toast('应用失败：'+why);}
   finally{this.busy=false;this.$('#client-monitors').classList.remove('busy');}},
  async applyAll(){for(const m of this.monitors)await this.apply(m);}

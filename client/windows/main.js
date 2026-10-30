@@ -20,7 +20,7 @@ const dataUrlToPng=url=>{const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.ex
 // backgrounded and stop painting the live wallpaper.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');app.commandLine.appendSwitch('disable-background-timer-throttling');app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion');
 const fileUrl=p=>require('node:url').pathToFileURL(p).href;
-const {checkLive}=require('./lib/live');
+const {checkLive,checkClips}=require('./lib/live');
 
 if(!app.requestSingleInstanceLock()){app.quit();}
 else{
@@ -63,26 +63,31 @@ async function monitors(){
  return screen.getAllDisplays().map((d,i)=>({id:'electron:'+d.id,index:i,left:Math.round(d.bounds.x*d.scaleFactor),top:Math.round(d.bounds.y*d.scaleFactor),width:Math.round(d.bounds.width*d.scaleFactor),height:Math.round(d.bounds.height*d.scaleFactor),primary:d.id===screen.getPrimaryDisplay().id}));
 }
 // background: PNG for the system wallpaper (also the still fallback under a live layer);
-// overlay: transparent PNG for the layer window; live: {name,type,bytes,plan} video that the layer plays.
-async function apply({monitorId,background,overlay,live}={}){
+// overlay: transparent PNG for the layer window; live: {name,type,bytes,plan} video that the layer plays;
+// clips: video layers from modules/layers.js, each {name,type,bytes,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}.
+async function apply({monitorId,background,overlay,live,clips}={}){
  if(typeof monitorId!=='string'||!monitorId)throw new Error('缺少显示器');
  const list=await monitors(),monitor=list.find(m=>m.id===monitorId);if(!monitor)throw new Error('显示器已不存在，请刷新列表');
- const checked=live?checkLive(live):null;
+ const checked=live?checkLive(live):null,clipList=checkClips(clips);
  await fsp.mkdir(DATA,{recursive:true});const key=keyOf(monitorId),stamp=Date.now();
  const file=path.join(DATA,`${key}-${stamp}.png`);await fsp.writeFile(file,dataUrlToPng(background));
  status('正在设置系统壁纸…');await native.setWallpaper(monitorId,file);
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-')&&old.endsWith('.png')&&!old.includes('overlay')&&old!==path.basename(file))fsp.unlink(path.join(DATA,old)).catch(()=>{});
- const content={overlay:null,live:null};
+ const content={overlay:null,live:null,clips:[]};
  if(overlay){content.overlay=path.join(DATA,`${key}-overlay.png`);await fsp.writeFile(content.overlay,dataUrlToPng(overlay));}
  if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan,still:file};}
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-live-')&&(!content.live||old!==path.basename(content.live.video)))fsp.unlink(path.join(DATA,old)).catch(()=>{});
- if(content.overlay||content.live){status('正在放置桌面层…');await showLayer(monitorId,monitor,content,stamp);}
+ if(clipList.length){status('正在写入图层视频…');content.clips=[];for(const [i,c] of clipList.entries()){const video=path.join(DATA,`${key}-clip-${i}-${stamp}.${c.ext}`);await fsp.writeFile(video,c.bytes);content.clips.push({...c.item,video});}}
+ const keepClips=new Set(content.clips.map(c=>path.basename(c.video)));for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-clip-')&&!keepClips.has(old))fsp.unlink(path.join(DATA,old)).catch(()=>{});
+ if(content.clips.length)content.still=file;
+ if(content.overlay||content.live||content.clips.length){status('正在放置桌面层…');await showLayer(monitorId,monitor,content,stamp);}
  else await clearLayer(monitorId);
- await saveLayers();status('已应用到显示器 '+(monitor.index+1)+(content.live?'（动态壁纸）':''));
- return {ok:true,file,layer:layers.has(monitorId),live:!!content.live};
+ await saveLayers();status('已应用到显示器 '+(monitor.index+1)+(content.live?'（动态壁纸）':content.clips.length?'（含动态图层）':''));
+ return {ok:true,file,layer:layers.has(monitorId),live:!!content.live,clips:content.clips.length};
 }
 // A transparent, click-through window the size of the monitor, parented under the wallpaper host by the bridge.
-// content = {overlay: PNG path | null, live: {video, plan} | null}; layer.html paints the video pieces under the overlay.
+// content = {overlay: PNG path | null, live: {video, plan, still} | null, clips: [{video,…look}], still}; layer.html paints the video
+// pieces and the clips below the person, then the overlay, then the clips above it — all on one canvas when any video plays.
 async function showLayer(monitorId,monitor,content,stamp){
  let entry=layers.get(monitorId);
  if(!entry||entry.window.isDestroyed()){
@@ -90,13 +95,14 @@ async function showLayer(monitorId,monitor,content,stamp){
   const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
   win.setIgnoreMouseEvents(true);win.setMenuBarVisibility(false);
-  entry={window:win,overlay:null,live:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
+  entry={window:win,overlay:null,live:null,clips:[],still:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
   win.on('closed',()=>{if(layers.get(monitorId)===entry)layers.delete(monitorId);});
  }
- entry.overlay=content.overlay||null;entry.live=content.live||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
+ entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  let url=fileUrl(path.join(__dirname,'layer.html'))+'?v='+stamp;
  if(entry.overlay)url+='&img='+encodeURIComponent(fileUrl(entry.overlay));
  if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),still:entry.live.still?fileUrl(entry.live.still):null,plan:entry.live.plan}));
+ if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?fileUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:fileUrl(c.video)}))}));
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
@@ -104,15 +110,16 @@ async function showLayer(monitorId,monitor,content,stamp){
 async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);
  if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
  if(!entry.window.isDestroyed())entry.window.destroy();await saveLayers();}
-const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,overlay:e.overlay,live:e.live,rect:e.rect})));
+const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,overlay:e.overlay,live:e.live,clips:e.clips,still:e.still,rect:e.rect})));
 // Windows keeps the wallpaper itself; the layer windows are ours to bring back after a restart.
 async function restoreLayers(){
  const saved=readJson(LAYERS,[]);if(!Array.isArray(saved)||!saved.length)return;
  let list=[];try{list=await monitors();}catch{return;}
  for(const item of saved){
   const monitor=list.find(m=>m.id===item.monitorId),overlay=item.overlay||item.file||null,live=item.live&&item.live.video&&item.live.plan?item.live:null; // `file` = pre-live layers.json
-  if(!monitor||(overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live))continue;
-  try{await showLayer(item.monitorId,monitor,{overlay,live},Date.now());}catch(error){console.error('restore layer',error);}
+  const clips=(Array.isArray(item.clips)?item.clips:[]).filter(c=>c&&typeof c.video==='string'&&fs.existsSync(c.video)),still=item.still&&fs.existsSync(item.still)?item.still:null;
+  if(!monitor||(overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live&&!clips.length))continue;
+  try{await showLayer(item.monitorId,monitor,{overlay,live,clips,still},Date.now());}catch(error){console.error('restore layer',error);}
  }
  await saveLayers();
 }
@@ -122,7 +129,7 @@ ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
-ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:get-settings',()=>settings);
 ipcMain.handle('client:set-settings',(e,patch)=>setSettings(patch));
 process.on('unhandledRejection',error=>{console.error(error);if(mainWindow&&!mainWindow.isDestroyed())status('出错：'+(error?.message||error));});

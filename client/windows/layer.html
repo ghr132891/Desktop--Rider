@@ -5,26 +5,50 @@
 <script>
 // Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1).
 //   ?img=<file url>   transparent overlay PNG: floating person copies and modules drawn above the person
-//   ?live=<json>      {video:<file url>, plan:{width,height,gapColor,pieces:[{polygon,x,y,w,h}]}} — the
-//                     video plays clipped to each wallpaper piece, exactly like the still pieces were cut
+//   ?live=<json>      {video:<file url>, still:<file url>, plan:{width,height,gapColor,pieces:[{polygon,x,y,w,h}]}} — the
+//                     shared wallpaper video plays clipped to each wallpaper piece, exactly like the still pieces were cut
+//   ?clips=<json>     {width,height,still,items:[{video,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}]}
+//                     video layers (modules/layers.js), each painted per frame with its own transform, look and blend mode
 //   &v=<stamp>        defeats the image cache
-// With a live plan the page is opaque (gap colour + video); without it only the overlay shows.
+// Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas per frame —
+// still wallpaper, live pieces, clips below the person, the overlay, clips above it — so blend modes have a backdrop.
 const q=new URLSearchParams(location.search),img=document.getElementById('overlay'),canvas=document.getElementById('live');
 window.__frames=0;
-if(q.get('img')){img.hidden=false;img.src=q.get('img')+'#'+(q.get('v')||'');}
-if(q.get('live')){
- const {video:src,still,plan}=JSON.parse(q.get('live'));
- document.body.style.background=plan.gapColor;
- if(still){document.body.style.backgroundImage=`url("${still}")`;document.body.style.backgroundSize='100% 100%';} // pieces with their own picture are not in the plan: the still shows there
- canvas.hidden=false;canvas.width=plan.width;canvas.height=plan.height;
- const video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});window.__video=video;
- const ctx=canvas.getContext('2d');let last=-1;
+const live=q.get('live')?JSON.parse(q.get('live')):null,clips=q.get('clips')?JSON.parse(q.get('clips')):null,overlaySrc=q.get('img')?q.get('img')+'#'+(q.get('v')||''):null;
+const items=(clips&&Array.isArray(clips.items)?clips.items:[]);
+if(!live&&!items.length){if(overlaySrc){img.hidden=false;img.src=overlaySrc;}}
+else{
+ const W=live?live.plan.width:clips.width,H=live?live.plan.height:clips.height;
+ canvas.hidden=false;canvas.width=W;canvas.height=H;const ctx=canvas.getContext('2d');
+ if(live)document.body.style.background=live.plan.gapColor;
+ let dirty=true;const picture=src=>{if(!src)return null;const im=new Image();im.onload=()=>{dirty=true;};im.src=src;return im;};
+ const still=picture(live?.still||clips?.still||null),overlay=picture(overlaySrc);
+ const mkVideo=src=>{const v=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});v.addEventListener('loadeddata',()=>{dirty=true;});v.play().catch(()=>{});return v;};
+ const liveVideo=live?mkVideo(live.video):null;if(liveVideo)liveVideo.addEventListener('error',()=>{document.title='Desktop Rider 桌面层 · 视频无法播放';});
+ for(const c of items)c.video=mkVideo(c.video);
+ window.__video=liveVideo||items[0]?.video||null;window.__clips=items.map(c=>c.video);
+ const videos=[liveVideo,...items.map(c=>c.video)].filter(Boolean),last=videos.map(()=>-1);
+ const blends={normal:'source-over',multiply:'multiply',screen:'screen',overlay:'overlay','soft-light':'soft-light',lighten:'lighten',darken:'darken',difference:'difference'};
+ const ready=im=>im&&im.complete&&im.naturalWidth>0;
+ const drawClip=c=>{const v=c.video;if(v.readyState<2||!v.videoWidth)return;ctx.save();
+  ctx.globalAlpha=c.opacity/100;ctx.globalCompositeOperation=blends[c.blend]||'source-over';
+  const f=[];if(c.blur)f.push(`blur(${c.blur}px)`);if(c.hue)f.push(`hue-rotate(${c.hue}deg)`);if(c.saturate!==100)f.push(`saturate(${c.saturate/100})`);if(c.brightness!==100)f.push(`brightness(${c.brightness/100})`);if(f.length)ctx.filter=f.join(' ');
+  ctx.translate(c.x,c.y);ctx.rotate(c.rotate*Math.PI/180);if(c.flipX)ctx.scale(-1,1);
+  ctx.beginPath();ctx.roundRect(-c.w/2,-c.h/2,c.w,c.h,c.radius);ctx.clip();
+  let dw=c.w,dh=c.h,sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;
+  if(c.fit==='cover'){const k=Math.max(c.w/sw,c.h/sh);sw=c.w/k;sh=c.h/k;sx=(v.videoWidth-sw)/2;sy=(v.videoHeight-sh)/2;}else if(c.fit==='contain'){const k=Math.min(c.w/sw,c.h/sh);dw=sw*k;dh=sh*k;}
+  ctx.drawImage(v,sx,sy,sw,sh,-dw/2,-dh/2,dw,dh);ctx.restore();};
  const draw=()=>{
-  if(video.readyState>=2&&video.currentTime!==last){last=video.currentTime;
-   for(const p of plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(video,p.x,p.y,p.w,p.h);ctx.restore();}
+  let changed=dirty;videos.forEach((v,i)=>{if(v.currentTime!==last[i]){last[i]=v.currentTime;changed=true;}});
+  if(changed){dirty=false;ctx.clearRect(0,0,W,H);
+   if(live){ctx.fillStyle=live.plan.gapColor;ctx.fillRect(0,0,W,H);}
+   if(ready(still))ctx.drawImage(still,0,0,W,H);
+   if(liveVideo&&liveVideo.readyState>=2)for(const p of live.plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(liveVideo,p.x,p.y,p.w,p.h);ctx.restore();}
+   for(const c of items)if(!c.above)drawClip(c);
+   if(ready(overlay))ctx.drawImage(overlay,0,0,W,H);
+   for(const c of items)if(c.above)drawClip(c);
    window.__frames++;}
   requestAnimationFrame(draw);};
- video.addEventListener('error',()=>{document.title='Desktop Rider 桌面层 · 视频无法播放';});
- video.play().catch(()=>{});requestAnimationFrame(draw);
+ requestAnimationFrame(draw);
 }
 </script></body></html>

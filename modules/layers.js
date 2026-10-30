@@ -135,6 +135,12 @@ const LayersModule=Rider.register({
   q('#layers-up').disabled=m.items[m.items.length-1]===it;q('#layers-down').disabled=m.items[0]===it;
  },
  // ---- export ----
+ // Video layers for the Windows client's layer window (modules/client.js): the file plus everything layer.html needs to
+ // paint it per frame at this monitor's size — frame in px, look values, blend, fit and whether it sits above the person.
+ async exportClips(s,w,h){const out=[];
+  for(const it of s.modules.layers.items){if(it.type!=='video'||it.hidden)continue;const v=this.videos.get(it.id);if(!v?.blob)continue;const f=this.frame(it,w,h);
+   out.push({name:it.name,type:v.blob.type||'video/webm',bytes:await v.blob.arrayBuffer(),x:f.cx,y:f.cy,w:f.w,h:f.h,rotate:it.rotate,flipX:it.flipX,opacity:it.opacity,blur:it.blur/100*w,hue:it.hue,saturate:it.saturate,brightness:it.brightness,radius:Math.min(f.w,f.h)*it.radius/100,blend:it.blend,fit:it.fit,above:it.above});}
+  return out;},
  draw({ctx,s,w,h}){return this.drawItems(ctx,s,w,h,false);},
  async drawItems(ctx,s,w,h,above){
   const blends={normal:'source-over',multiply:'multiply',screen:'screen',overlay:'overlay','soft-light':'soft-light',lighten:'lighten',darken:'darken',difference:'difference'};

@@ -18,8 +18,8 @@ const assert=require('node:assert/strict');
  assert.equal(await page.locator('#client-autostart').isChecked(),true);
  // Applying renders background + overlay at the monitor's resolution; with nothing floating there is no overlay.
  await page.locator('.client-monitor').nth(1).click();await page.waitForFunction(()=>window.__calls.length===1,null,{timeout:60000});
- const first=await page.evaluate(async()=>{const c=window.__calls[0];const img=new Image();img.src=c.background;await img.decode();return {monitorId:c.monitorId,w:img.naturalWidth,h:img.naturalHeight,overlay:c.overlay};});
- assert.deepEqual(first,{monitorId:'\\\\?\\DISPLAY#B',w:1080,h:1920,overlay:null});
+ const first=await page.evaluate(async()=>{const c=window.__calls[0];const img=new Image();img.src=c.background;await img.decode();return {monitorId:c.monitorId,w:img.naturalWidth,h:img.naturalHeight,overlay:c.overlay,clips:c.clips};});
+ assert.deepEqual(first,{monitorId:'\\\\?\\DISPLAY#B',w:1080,h:1920,overlay:null,clips:[]},'no video layers → an empty clip list');
  assert.match(await page.locator('#client-status').textContent(),/已应用到显示器 2/);
  // Desktop text (an above-person module) makes an overlay; the background stays free of it.
  await page.evaluate(()=>{state.modules.note.text='客户端测试';update({custom:false});});
