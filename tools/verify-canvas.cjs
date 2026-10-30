@@ -38,8 +38,39 @@ const assert=require('node:assert/strict');
  assert.ok(Math.abs(parseFloat((await page.evaluate(()=>document.querySelector('#piece-right').style.backgroundSize)))-parseFloat(before.size)*1.5)<1,'zoom 150% scales the picture');
  const box=await page.locator('#desktop').boundingBox();
  // (20%, 30%) is bare wallpaper: the first zone starts at 48% height.
- await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3);await page.mouse.down();await page.mouse.move(box.x+box.width*.2+30,box.y+box.height*.3+20,{steps:5});await page.mouse.move(box.x+box.width*.2+60,box.y+box.height*.3+40,{steps:5});await page.mouse.up();await settled();
- const dragged=await page.evaluate(()=>state.pieces[0]);assert.ok(Math.abs(dragged.dx-60/box.width*100)<.6&&Math.abs(dragged.dy-40/box.height*100)<.6,'dragging the left piece pans it: '+JSON.stringify(dragged));
+ await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3);await page.mouse.down();await page.mouse.move(box.x+box.width*.2-30,box.y+box.height*.3+20,{steps:5});await page.mouse.move(box.x+box.width*.2-60,box.y+box.height*.3+40,{steps:5});await page.mouse.up();await settled();
+ // 不露白 (default): the linked left piece shows the picture's left half, so it may slide left (more picture there) but not down — that would bare the top.
+ const dragged=await page.evaluate(()=>state.pieces[0]);assert.ok(Math.abs(dragged.dx+60/box.width*100)<.6&&dragged.dy===0,'dragging the covered left piece pans sideways only: '+JSON.stringify(dragged));
+ assert.equal(await page.evaluate(()=>document.querySelector('#fill-left').hidden),true,'nothing bare, no fill canvas');
+ await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3);await page.mouse.wheel(0,300);await settled();assert.equal(await page.evaluate(()=>state.pieces[0].zoom),100,'wheel cannot zoom a covered piece below the size that fills it');
+ await page.mouse.wheel(0,-300);await settled();assert.ok((await page.evaluate(()=>state.pieces[0].zoom))>100,'wheel zooms the piece');
+ // Cover off: the picture pans freely and the bare strip is filled — blur / mirror / 本机扩图 / gap colour, preview and export alike.
+ const tone=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=64;c.height=40;const x=c.getContext('2d');x.fillStyle='#ff0000';x.fillRect(0,0,32,40);x.fillStyle='#00ff00';x.fillRect(32,0,32,40);return c.toDataURL('image/png');});
+ await page.evaluate(tone=>{Object.assign(state.pieces[0],{image:tone,dx:0,dy:0,zoom:100});update({custom:false});},tone);await settled();
+ await page.locator('.piece-card[data-piece="0"] .piece-cover').uncheck();await settled();
+ assert.equal(await page.evaluate(()=>document.querySelector('.piece-card[data-piece="0"] .piece-fill-mode').disabled),false,'the fill picker wakes up once cover is off');
+ await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3);await page.mouse.down();await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3+40,{steps:5});await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3+box.height*.3,{steps:5});await page.mouse.up();await settled();
+ const free=await page.evaluate(()=>state.pieces[0]);assert.ok(Math.abs(free.dx)<.6&&Math.abs(free.dy-30)<.6,'uncovered piece pans freely: '+JSON.stringify(free));
+ const fillPixel=()=>page.evaluate(()=>{const c=document.querySelector('#fill-left');if(c.hidden)return null;const d=c.getContext('2d').getImageData(Math.round(c.width*.45),Math.round(c.height*.1),1,1).data;return [...d];});
+ // (.45w, .1h) lies in the bare strip above the picture (which spans the whole desktop width, red half left): the mirrored tile
+ // above repeats the red half there, while the blurred backdrop — the picture cover-fitted to this half-width piece — shows its green half.
+ const st=await page.evaluate(()=>clone(state));
+ assert.deepEqual((await sample(st,.45,.1)).slice(0,3),[0,255,0],'blur backdrop is green at (.45,.1)');assert.deepEqual((await fillPixel()).slice(0,3),[0,255,0],'preview fill canvas matches');
+ assert.deepEqual((await sample(st,.45,.5)).slice(0,3),[255,0,0],'the picture itself still shows below the strip');
+ await page.locator('.piece-card[data-piece="0"] .piece-fill-mode').selectOption('mirror');await settled();
+ assert.deepEqual((await sample(await page.evaluate(()=>clone(state)),.45,.1)).slice(0,3),[255,0,0],'mirror continues the red half upward');assert.deepEqual((await fillPixel()).slice(0,3),[255,0,0]);
+ await page.locator('.piece-card[data-piece="0"] .piece-fill-mode').selectOption('gap');await settled();
+ assert.deepEqual((await sample(await page.evaluate(()=>clone(state)),.45,.1)).slice(0,3),[233,239,244],'gap colour shows through');assert.equal(await fillPixel(),null,'no fill canvas for the gap colour');
+ await page.locator('.piece-card[data-piece="0"] .piece-fill-mode').selectOption('extend');await settled();
+ assert.equal(await page.locator('.piece-card[data-piece="0"] .piece-fill-status').textContent(),'正在本机扩图…');
+ await page.waitForFunction(()=>[...extensions.values()].some(v=>v&&!v.then&&v.canvas),null,{timeout:90000});await settled();
+ assert.equal(await page.locator('.piece-card[data-piece="0"] .piece-fill-status').textContent(),'');
+ const ext=await sample(await page.evaluate(()=>clone(state)),.05,.1);assert.ok(ext[0]>200&&ext[1]<90&&ext[2]<90,'本机扩图 rebuilds the strip above the red half from red texture: '+ext);
+ const extPreview=await fillPixel();assert.ok(extPreview&&extPreview[3]===255,'preview fill canvas is opaque where the picture is bare');
+ assert.equal(await page.evaluate(()=>extensions.size),1,'the extension is computed once and reused by preview and export');
+ await page.locator('.piece-card[data-piece="0"] .piece-cover').check();await settled();
+ assert.deepEqual(await page.evaluate(()=>[state.pieces[0].dy,document.querySelector('#fill-left').hidden]),[0,true],'cover back on snaps the picture into the piece');
+ await page.evaluate(red=>{Object.assign(state.pieces[0],{image:red,dx:0,dy:0,zoom:100,fill:'blur'});update({custom:false});},red);await settled();
  await page.mouse.move(box.x+box.width*.2,box.y+box.height*.3);await page.mouse.wheel(0,-300);await settled();assert.ok((await page.evaluate(()=>state.pieces[0].zoom))>100,'wheel zooms the piece');
  await page.locator('.piece-card[data-piece="0"] .piece-shared').click();await settled();assert.equal(await page.evaluate(()=>state.pieces[0].image),null);assert.ok(await page.evaluate(()=>document.querySelector('#piece-left').style.backgroundImage.includes('assets/')),'back to the shared wallpaper');
  await page.locator('.piece-card[data-piece="0"] .piece-reset').click();await settled();assert.deepEqual(await page.evaluate(()=>[state.pieces[0].dx,state.pieces[0].dy,state.pieces[0].zoom]),[0,0,100]);
@@ -98,5 +129,5 @@ const assert=require('node:assert/strict');
  await page.locator('[data-view="layers"]').click();await page.locator('.layer-row').first().click();await page.locator('#layers-delete').click();await page.locator('.layer-row').first().click();await page.locator('#layers-delete').click();await settled();
  assert.equal(await page.evaluate(()=>state.modules.layers.items.length),0);assert.equal(await page.evaluate(()=>document.querySelectorAll('.layer-item').length),0);
  assert.deepEqual(errors,[]);await browser.close();
- console.log('PASS: curved / wavy dividers export like the preview, per-piece pictures with offset + zoom (panel, drag, wheel, persistence), person-copy rotation / hue / glow / opacity with outline handles and duplicate, 图层 module (shape + image, drag, wheel, edge + rotate handles, blend, above/below, list order, hide, persistence, delete); no page errors.');
+ console.log('PASS: curved / wavy dividers export like the preview, per-piece pictures with offset + zoom (panel, drag, wheel, persistence), 不露白 clamp and bare-strip fills (blur / mirror / 本机扩图 / gap) in preview and export, person-copy rotation / hue / glow / opacity with outline handles and duplicate, 图层 module (shape + image, drag, wheel, edge + rotate handles, blend, above/below, list order, hide, persistence, delete); no page errors.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -53,7 +53,7 @@ Rider.register({
 | `loadImage(src)`、`source()`、`scene(s)` | 壁纸图片、当前壁纸地址、含抠图的场景 |
 | `geometry(s,w,h)`、`floating(s)` | 分裂几何、人物是否悬浮 |
 | `wallpaperPlacement(s,img,w,h,polygon,index)` | 某块分区里壁纸的目标矩形 `{x,y,w,h}`；`img` 只需 `naturalWidth / naturalHeight`，视频也可用 |
-| `piecePlacement(s,img,w,h,polygon,index)` | 同上，但叠加了该分区自己的偏移与缩放（`state.pieces[index]`）；跟随分区的图层应使用这个 |
+| `piecePlacement(s,img,w,h,polygon,index)` | 同上，但叠加了该分区自己的偏移与缩放（`state.pieces[index]`），并在该分区开启「不露白」（`cover`，默认）时把结果限制为盖满多边形外接框；跟随分区的图层应使用这个。分区没盖到的空白由核心按 `fill`（blur / mirror / extend / gap）在画面之下填充，模块不用处理 |
 | `useImage(drawable,width,height,name)` | 把任意可绘制对象（图片、位图、视频帧）设为自定义壁纸，与导入图片走同一路径 |
 | `scheduleRender()` / `renderDesktop()` | 重绘预览（模块自身计时器驱动的内容可直接改图层 DOM，不必走这里） |
 | `createItem(name,kind)`、`moveItem(id,zoneId)` | 收纳分区中的快捷项；`kind` 为 file / folder / image / code / music |

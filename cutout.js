@@ -95,5 +95,10 @@ const Cutout = (()=>{
   for(let y=0;y<m.height;y++)for(let x=0;x<m.width;x++)if(d[(y*m.width+x)*4+3]>200){const dd=(x-cx)**2+(y-cy)**2;if(dd<bd){bd=dd;best=[x,y];}}
   return {x:Math.round((best[0]+.5)/m.width*1000)/1000,y:Math.round((best[1]+.5)/m.height*1000)/1000,add:true};
  }
- return {combine,separate,autoPoint,settings};
+ // Generic hole filling for other callers (the per-piece 露白 extension in app.js): `data` is the RGBA
+ // ImageData of a picture with bare pixels, `alpha` marks the hole (0–255); returns an opaque canvas.
+ async function inpaint(data,alpha){const w=data.width,h=data.height,pixels=new Uint8ClampedArray(data.data);
+  const filled=await new Promise((resolve,reject)=>{const id=++nextJob;jobs.set(id,{resolve,reject});inpaintWorker().postMessage({id,pixels,alpha,width:w,height:h},[pixels.buffer]);});
+  const out=canvas(w,h),img=new ImageData(new Uint8ClampedArray(filled.buffer,filled.byteOffset,filled.length),w,h);for(let i=3;i<img.data.length;i+=4)img.data[i]=255;out.getContext('2d').putImageData(img,0,0);return out;}
+ return {combine,separate,autoPoint,settings,inpaint};
 })();
