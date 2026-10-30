@@ -66,6 +66,11 @@ jobs:
           Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId | Format-Table
           Add-Type -AssemblyName System.Windows.Forms
           [System.Windows.Forms.Screen]::AllScreens | Select-Object DeviceName, Primary, Bounds | Format-List
+          # Integrity level of the job (and so of Electron + bridge): tells whether the layer test ran elevated. Shown as an annotation on the public run page.
+          $label = (whoami /groups | Select-String 'Mandatory Label').Line -replace '\s+', ' '
+          $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          $explorer = (Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId
+          "::notice title=process integrity::elevated=$admin; $label; explorer session=$explorer; job session=$([System.Diagnostics.Process]::GetCurrentProcess().SessionId)"
       - run: npm ci
       - name: Unit tests
         run: npm test
