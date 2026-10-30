@@ -13,8 +13,10 @@ const q=new URLSearchParams(location.search),img=document.getElementById('overla
 window.__frames=0;
 if(q.get('img')){img.hidden=false;img.src=q.get('img')+'#'+(q.get('v')||'');}
 if(q.get('live')){
- const {video:src,plan}=JSON.parse(q.get('live'));
- document.body.style.background=plan.gapColor;canvas.hidden=false;canvas.width=plan.width;canvas.height=plan.height;
+ const {video:src,still,plan}=JSON.parse(q.get('live'));
+ document.body.style.background=plan.gapColor;
+ if(still){document.body.style.backgroundImage=`url("${still}")`;document.body.style.backgroundSize='100% 100%';} // pieces with their own picture are not in the plan: the still shows there
+ canvas.hidden=false;canvas.width=plan.width;canvas.height=plan.height;
  const video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});window.__video=video;
  const ctx=canvas.getContext('2d');let last=-1;
  const draw=()=>{

@@ -74,7 +74,7 @@ async function apply({monitorId,background,overlay,live}={}){
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-')&&old.endsWith('.png')&&!old.includes('overlay')&&old!==path.basename(file))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  const content={overlay:null,live:null};
  if(overlay){content.overlay=path.join(DATA,`${key}-overlay.png`);await fsp.writeFile(content.overlay,dataUrlToPng(overlay));}
- if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan};}
+ if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan,still:file};}
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-live-')&&(!content.live||old!==path.basename(content.live.video)))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  if(content.overlay||content.live){status('正在放置桌面层…');await showLayer(monitorId,monitor,content,stamp);}
  else await clearLayer(monitorId);
@@ -96,7 +96,7 @@ async function showLayer(monitorId,monitor,content,stamp){
  entry.overlay=content.overlay||null;entry.live=content.live||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  let url=fileUrl(path.join(__dirname,'layer.html'))+'?v='+stamp;
  if(entry.overlay)url+='&img='+encodeURIComponent(fileUrl(entry.overlay));
- if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),plan:entry.live.plan}));
+ if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),still:entry.live.still?fileUrl(entry.live.still):null,plan:entry.live.plan}));
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window

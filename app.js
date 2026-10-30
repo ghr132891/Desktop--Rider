@@ -9,7 +9,7 @@ const wallpapers = [
   {id:'sand',name:'旷野回声',tone:'沙岩',src:'assets/sand.svg'},
   {id:'portrait',name:'林间人像',tone:'人像实拍',src:'assets/portrait-wallpaper.jpg'}
 ];
-const defaults = {floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间',x:6.5,y:48},{id:'life',name:'日常灵感',x:66,y:24}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
+const defaults = {bend:0,wave:0,waveAmp:8,pieces:[{image:null,dx:0,dy:0,zoom:100},{image:null,dx:0,dy:0,zoom:100}],floatPerson:false,floatPoints:[],floatCopies:[copyDefaults()],floatActive:0,floatShadow:true,floatKeepOriginal:false,anchorY:50,sourceRatio:50,focusX:50,focusY:50,protectPerson:false,mode:'diagonal',angle:15,ratio:58,gap:16,gapColor:'#e9eff4',linked:true,aspect:1.6,wallpaper:'mountain',customImage:null,scale:100,showIcons:true,preset:'focus',zones:[{id:'work',name:'工作空间',x:6.5,y:48},{id:'life',name:'日常灵感',x:66,y:24}],items:[{id:'i1',name:'项目文件',kind:'folder',zone:'work'},{id:'i2',name:'设计稿',kind:'image',zone:'work'},{id:'i3',name:'开发工具',kind:'code',zone:'work'},{id:'i4',name:'灵感收藏',kind:'folder',zone:'life'},{id:'i5',name:'我的音乐',kind:'music',zone:'life'},{id:'i6',name:'旅行计划',kind:'file',zone:'life'}]};
 defaults.modules=Rider.moduleDefaults(); // one slice per registered module (core.js)
 const presets = [
  {id:'focus',name:'专注斜切',desc:'灵感与效率并行',mode:'diagonal',angle:15,ratio:58,gap:16,wallpaper:'mountain'},
@@ -22,7 +22,10 @@ function readStorage(key, fallback){try{return JSON.parse(localStorage.getItem(k
 function validState(s){return s && ['single','vertical','diagonal'].includes(s.mode) && Array.isArray(s.zones) && s.zones.length>=1 && s.zones.length<=3 && Array.isArray(s.items) && s.items.length<=18 && [s.angle,s.ratio,s.gap,s.scale,s.aspect].every(Number.isFinite) && /^#[0-9a-f]{6}$/i.test(s.gapColor) && wallpapers.some(w=>w.id===s.wallpaper) && (s.customImage===null || /^data:image\/(jpeg|png|webp);base64,/.test(s.customImage));}
 function normalizeState(input){const s={...clone(defaults),...input};
  const clamp=(value,min,max,fallback)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
- s.ratio=clamp(s.ratio,1,99,58);s.angle=clamp(s.angle,-80,80,15);s.anchorY=clamp(s.anchorY,1,99,50);s.sourceRatio=clamp(s.sourceRatio,5,95,50);s.focusX=clamp(s.focusX,0,100,50);s.focusY=clamp(s.focusY,0,100,50);s.gap=clamp(s.gap,0,60,16);s.scale=clamp(s.scale,100,160,100);
+ s.ratio=clamp(s.ratio,1,99,58);s.angle=clamp(s.angle,-80,80,15);s.anchorY=clamp(s.anchorY,1,99,50);s.sourceRatio=clamp(s.sourceRatio,5,95,50);s.focusX=clamp(s.focusX,0,100,50);s.focusY=clamp(s.focusY,0,100,50);s.gap=clamp(s.gap,0,60,16);s.scale=clamp(s.scale,100,160,100);s.bend=clamp(s.bend,-60,60,0);s.wave=Math.round(clamp(s.wave,0,6,0));s.waveAmp=clamp(s.waveAmp,0,20,8);
+ // Per-piece picture: its own image (or null = the shared wallpaper), an offset in % of the desktop and an extra zoom.
+ const image=v=>typeof v==='string'&&/^data:image\/(jpeg|png|webp);base64,/.test(v)?v:null;
+ s.pieces=[0,1].map(i=>{const q=Array.isArray(s.pieces)&&s.pieces[i]&&typeof s.pieces[i]==='object'?s.pieces[i]:{};return {image:image(q.image),dx:clamp(q.dx,-100,100,0),dy:clamp(q.dy,-100,100,0),zoom:clamp(q.zoom,50,300,100)};});
  s.protectPerson=typeof input.protectPerson==='boolean'?input.protectPerson:input.wallpaper==='portrait';
  // Zones carry their own desktop position (% of the desktop, top-left corner).
  s.zones=s.zones.map((z,i)=>({id:z.id,name:z.name,x:clamp(z.x,0,71,zoneSlot(i)[0]),y:clamp(z.y,0,92,zoneSlot(i)[1])}));
@@ -30,8 +33,8 @@ function normalizeState(input){const s={...clone(defaults),...input};
  s.floatPerson=s.floatPerson===true&&s.floatPoints.length>0;s.floatShadow=s.floatShadow!==false;s.floatKeepOriginal=s.floatKeepOriginal===true;
  // Copies of the cutout in z-order (last on top); drafts from before copies existed carry one in floatX/Y/Size/Flip.
  const legacy=[{x:s.floatX??null,y:s.floatY??null,size:s.floatSize??null,flip:s.floatFlip===true}],num=(v,min,max)=>v===null||v===undefined?null:clamp(v,min,max,null);
- s.floatCopies=(Array.isArray(s.floatCopies)&&s.floatCopies.length?s.floatCopies:legacy).slice(0,12).filter(c=>c&&typeof c==='object').map(c=>({x:num(c.x,-20,120),y:num(c.y,-20,120),size:num(c.size,10,150),flip:c.flip===true}));
- if(!s.floatCopies.length)s.floatCopies=[{x:null,y:null,size:null,flip:false}];s.floatActive=Number.isInteger(s.floatActive)?Math.max(0,Math.min(s.floatCopies.length-1,s.floatActive)):0;
+ s.floatCopies=(Array.isArray(s.floatCopies)&&s.floatCopies.length?s.floatCopies:legacy).slice(0,12).filter(c=>c&&typeof c==='object').map(c=>({x:num(c.x,-20,120),y:num(c.y,-20,120),size:num(c.size,10,150),flip:c.flip===true,rotate:clamp(c.rotate,-180,180,0),opacity:clamp(c.opacity,10,100,100),hue:clamp(c.hue,-180,180,0),saturate:clamp(c.saturate,0,200,100),brightness:clamp(c.brightness,50,150,100),glow:clamp(c.glow,0,40,0),glowColor:/^#[0-9a-f]{6}$/i.test(c.glowColor)?c.glowColor.toLowerCase():'#ffffff'}));
+ if(!s.floatCopies.length)s.floatCopies=[copyDefaults()];s.floatActive=Number.isInteger(s.floatActive)?Math.max(0,Math.min(s.floatCopies.length-1,s.floatActive)):0;
  delete s.floatX;delete s.floatY;delete s.floatSize;delete s.floatFlip;
  s.modules=Rider.normalizeModules(input.modules,clamp);return s;
 }
@@ -42,7 +45,11 @@ saved = Array.isArray(saved) ? saved.filter(s=>s && typeof s.id==='string' && ty
 let pickingSplit=false;
 let currentView='design', toastTimer, persistTimer, storageWarning=false;
 const imageCache=new Map();
-const noFloat=()=>({floatPerson:false,floatPoints:[],floatCopies:[{x:null,y:null,size:null,flip:false}],floatActive:0});
+// One floating copy: position / size (null = where the person is in the picture), then its look.
+function copyDefaults(){return {x:null,y:null,size:null,flip:false,rotate:0,opacity:100,hue:0,saturate:100,brightness:100,glow:0,glowColor:'#ffffff'};}
+const copyTransform=c=>`rotate(${c.rotate||0}deg) scaleX(${c.flip?-1:1})`;
+function copyFilter(c,w,shadow){const f=[];if(c.hue)f.push(`hue-rotate(${c.hue}deg)`);if(c.saturate!==100)f.push(`saturate(${c.saturate/100})`);if(c.brightness!==100)f.push(`brightness(${c.brightness/100})`);if(c.glow)f.push(`drop-shadow(0 0 ${c.glow/100*w*.25}px ${c.glowColor})`);if(shadow)f.push(`drop-shadow(0 ${w*.005}px ${w*.006}px #0b182c59)`);return f.join(' ')||'none';}
+const noFloat=()=>({floatPerson:false,floatPoints:[],floatCopies:[copyDefaults()],floatActive:0});
 function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),3200);}
 function persistNow(){clearTimeout(persistTimer);try{localStorage.setItem('desktop-rider-draft',JSON.stringify(state));}catch{if(!storageWarning){toast('浏览器存储已满，当前修改暂未自动保存');storageWarning=true;}}}
@@ -63,20 +70,33 @@ function floatFrame(s,view,w,h,copy=activeCopy(s)){
  if(x===null||y===null||size===null){const p=Portrait.placement({...s,mode:'single'},view.original,w,h),b=view.cut.box;x??=(p.x+(b.x+b.w/2)*p.w)/w*100;y??=(p.y+(b.y+b.h/2)*p.h)/h*100;size??=Math.max(10,Math.min(150,b.h*p.h/h*100));}
  const fh=size/100*h,fw=fh*view.cut.cutout.width/view.cut.cutout.height;return {x,y,size,flip:copy.flip,left:x/100*w-fw/2,top:y/100*h-fh/2,w:fw,h:fh};
 }
-function drawFloat(ctx,s,view,w,h){if(!view.cut)return;for(const copy of s.floatCopies){const f=floatFrame(s,view,w,h,copy);ctx.save();if(s.floatShadow){ctx.shadowColor='#0b182c59';ctx.shadowBlur=w*.012;ctx.shadowOffsetY=w*.005;}ctx.translate(f.left+f.w/2,f.top+f.h/2);if(copy.flip)ctx.scale(-1,1);ctx.drawImage(view.cut.cutout,-f.w/2,-f.h/2,f.w,f.h);ctx.restore();}}
+function drawFloat(ctx,s,view,w,h){if(!view.cut)return;for(const copy of s.floatCopies){const f=floatFrame(s,view,w,h,copy);ctx.save();ctx.globalAlpha=(copy.opacity??100)/100;const filter=copyFilter(copy,w,false);if(filter!=='none')ctx.filter=filter;if(s.floatShadow){ctx.shadowColor='#0b182c59';ctx.shadowBlur=w*.012;ctx.shadowOffsetY=w*.005;}ctx.translate(f.left+f.w/2,f.top+f.h/2);ctx.rotate((copy.rotate||0)*Math.PI/180);if(copy.flip)ctx.scale(-1,1);ctx.drawImage(view.cut.cutout,-f.w/2,-f.h/2,f.w,f.h);ctx.restore();}}
 function loadImage(src){if(imageCache.has(src))return imageCache.get(src);const p=new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('壁纸读取失败，请重新导入图片'));img.src=src;});imageCache.set(src,p);return p;}
 // Clip each rectangle against the split line; all dimensions are based on a 1600px canvas.
 function geometry(s,w,h){
  const slope=Math.tan((s.mode==='diagonal'?s.angle:0)*Math.PI/180), normal=Math.hypot(1,slope), gap=s.gap*w/1600;
  const c=s.ratio/100*w+slope*(s.anchorY??50)/100*h;
  function polygon(bound,side){const points=[[0,0],[w,0],[w,h],[0,h]],out=[];
-   for(let i=0;i<4;i++){const a=points[i],b=points[(i+1)%4],da=side*(a[0]+slope*a[1]-bound),db=side*(b[0]+slope*b[1]-bound);if(da<=0)out.push(a);if((da<=0)!==(db<=0)){const t=da/(da-db);out.push([a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])]);}}
+   for(let i=0;i<4;i++){const a=points[i],b=points[(i+1)%4],da=side*(a[0]+slope*a[1]-bound),db=side*(b[0]+slope*b[1]-bound);if(da<=0)out.push(a);if((da<=0)!==(db<=0)){const t=da/(da-db);const cut=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])];cut.cut=true;out.push(cut);}}
    return out;
  }
  const endpoints=[];
  for(const p of [[c,0],[c-slope*h,h],...(Math.abs(slope)>1e-9?[[0,c/slope],[w,(c-w)/slope]]:[])])if(p[0]>=-1e-6&&p[0]<=w+1e-6&&p[1]>=-1e-6&&p[1]<=h+1e-6&&!endpoints.some(q=>Math.hypot(p[0]-q[0],p[1]-q[1])<.01))endpoints.push(p);
  endpoints.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);
- return {endpoints,polygons:s.mode==='single'?[[[0,0],[w,0],[w,h],[0,h]],[]]:[polygon(c-gap/2*normal,1),polygon(c+gap/2*normal,-1)]};
+ if(s.mode==='single')return {endpoints,polygons:[[[0,0],[w,0],[w,h],[0,h]],[]]};
+ const polygons=[polygon(c-gap/2*normal,1),polygon(c+gap/2*normal,-1)];
+ // Curved divider: an arc (bend) and/or a wave replace the straight edge between the two cut points. Points are
+ // sampled along the base line and pushed along its normal, so clip-path, canvas clip and the client plan all agree.
+ const amp=(s.bend||0)/100*w*.5,wav=(s.wave||0)>0?(s.waveAmp||0)/100*w*.5:0;
+ if((amp||wav)&&endpoints.length>=2){
+  const [E0,E1]=endpoints,len=Math.hypot(E1[0]-E0[0],E1[1]-E0[1])||1,d=[(E1[0]-E0[0])/len,(E1[1]-E0[1])/len],g=[1/normal,slope/normal];
+  const f=t=>amp*Math.sin(Math.PI*t)+wav*Math.sin(2*Math.PI*s.wave*t),proj=p=>((p[0]-E0[0])*d[0]+(p[1]-E0[1])*d[1])/len;
+  polygons.forEach((out,i)=>{const cuts=out.map((p,k)=>p.cut?k:-1).filter(k=>k>=0);if(cuts.length!==2)return;
+   const adjacent=cuts[1]===cuts[0]+1,first=adjacent?cuts[0]:cuts[1],second=adjacent?cuts[1]:cuts[0],tA=proj(out[first]),tB=proj(out[second]),side=i===0?-gap/2:gap/2,samples=[];
+   for(let k=1;k<48;k++){const t=tA+(tB-tA)*k/48,off=f(t)+side;samples.push([Math.max(0,Math.min(w,E0[0]+(E1[0]-E0[0])*t+g[0]*off)),Math.max(0,Math.min(h,E0[1]+(E1[1]-E0[1])*t+g[1]*off))]);}
+   if(adjacent)out.splice(first+1,0,...samples);else out.push(...samples);});
+ }
+ return {endpoints,polygons:polygons.map(poly=>poly.map(p=>[p[0],p[1]]))};
 }
 // The original desktop crop is split into two source halves. Each half keeps its
 // aspect ratio while covering its own polygon. Preview and PNG use this mapping.
@@ -94,6 +114,11 @@ function wallpaperPlacement(s,img,w,h,points,index){
  return {x:(left+right)/2+(baseX-sourceCenterX)*fit,
    y:(top+bottom)/2+(baseY-h/2)*fit,w:iw*fit,h:ih*fit};
 }
+// Per-piece adjustments on top of the shared placement: extra zoom about the centre, then an offset in % of the desktop.
+function adjustPiece(p,q,w,h){const z=(q?.zoom??100)/100;return {x:p.x+p.w*(1-z)/2+(q?.dx??0)/100*w,y:p.y+p.h*(1-z)/2+(q?.dy??0)/100*h,w:p.w*z,h:p.h*z};}
+function piecePlacement(s,img,w,h,points,index){return adjustPiece(wallpaperPlacement(s,img,w,h,points,index),s.pieces?.[index],w,h);}
+// A piece may show its own picture instead of the shared wallpaper (decorative: person detection stays on the shared one).
+function pieceImages(s){return Promise.all((s.pieces||[]).map(q=>q.image?loadImage(q.image).catch(()=>null):null));}
 let renderSequence=0,portraitFrameSource=null,floatView=null;
 function syncSplitGuide(s,w,h,geo){const line=$('#split-guide-line');$('#split-guide').setAttribute('viewBox',`0 0 ${w} ${h}`);if(geo.endpoints.length===2){const [a,b]=geo.endpoints;line.setAttribute('x1',a[0]);line.setAttribute('y1',a[1]);line.setAttribute('x2',b[0]);line.setAttribute('y2',b[1]);}$('#split-guide').hidden=s.mode==='single';}
 // Positions every copy from state alone, so dragging skips the wallpaper pipeline.
@@ -105,10 +130,10 @@ function placeFloat(){
  let active=null;
  state.floatCopies.forEach((copy,i)=>{const el=root.children[i];if(el.dataset.src!==floatView.cut.cutoutUrl){el.src=floatView.cut.cutoutUrl;el.dataset.src=floatView.cut.cutoutUrl;}el.dataset.index=i;
   const f=floatFrame(state,floatView,w,h,copy);Object.assign(el.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px',zIndex:3+i});el.style.setProperty('--shadow-y',w*.005+'px');el.style.setProperty('--shadow-blur',w*.006+'px');
-  el.classList.toggle('flip',copy.flip);el.classList.toggle('shadow',state.floatShadow);el.classList.toggle('active',i===state.floatActive&&state.floatCopies.length>1);if(i===state.floatActive)active=f;});
+  el.classList.toggle('flip',copy.flip);el.classList.toggle('shadow',state.floatShadow);el.classList.toggle('active',i===state.floatActive&&state.floatCopies.length>1);el.style.transform=copyTransform(copy);el.style.filter=copyFilter(copy,w,state.floatShadow);el.style.opacity=(copy.opacity??100)/100;if(i===state.floatActive)active=f;});
  const f=active||floatFrame(state,floatView,w,h),n=state.floatCopies.length;
  // Selection outline sits above every copy, so the selected one shows through the ones covering it.
- const outline=$('#float-outline');outline.hidden=n<2;Object.assign(outline.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px'});
+ const outline=$('#float-outline');outline.hidden=false;outline.classList.toggle('single',n<2);Object.assign(outline.style,{left:f.left+'px',top:f.top+'px',width:f.w+'px',height:f.h+'px',transform:`rotate(${activeCopy(state).rotate||0}deg)`});
  $('#float-size').value=f.size;$('#float-size-value').textContent=Math.round(f.size)+'%';$('#float-size').style.setProperty('--progress',(f.size-10)/140*100+'%');
  $('#float-copy-label').textContent=n>1?`第 ${state.floatActive+1} / ${n} 份 · 按序号或点击画面中的人物切换`:'1 份';
  // Numbered buttons reach a copy even when another one covers it in the preview.
@@ -133,10 +158,10 @@ async function renderDesktop(){
  portraitLayer.hidden=!keepPortrait;
  if(keepPortrait){$('#piece-left').style.display='none';$('#piece-right').style.display='none';}
  if(!floating(s)){$('#float-layers').replaceChildren();$('#float-outline').hidden=true;}else if(floatView?.key!==key)$('#float-status').textContent='正在本机抠出人物并补全背景…';
- try{const view=await scene(s);if(seq!==renderSequence)return;
+ try{const [view,own]=await Promise.all([scene(s),pieceImages(s)]);if(seq!==renderSequence)return;
  floatView=view.cut?{...view,key}:null;
  if(floating(s)){placeFloat();$('#float-status').textContent=view.cut?'人物已抠出 · 直接拖动画面中的人物，滚轮调整大小':'没有选中任何区域，请调整抠图范围';}
- ['#piece-left','#piece-right'].forEach((id,i)=>{const el=$(id),placement=s.protectPerson?Portrait.placement(s,view.img,w,h):wallpaperPlacement(s,view.img,w,h,geo.polygons[i],i);el.style.backgroundImage=`url("${view.src}")`;el.style.backgroundRepeat='no-repeat';el.style.backgroundSize=`${placement.w}px ${placement.h}px`;el.style.backgroundPosition=`${placement.x}px ${placement.y}px`;});
+ ['#piece-left','#piece-right'].forEach((id,i)=>{const el=$(id),img=own[i]||view.img,placement=s.protectPerson?Portrait.placement(s,view.img,w,h):piecePlacement(s,img,w,h,geo.polygons[i],i);el.dataset.own=own[i]?'1':'';el.style.backgroundImage=`url("${own[i]?s.pieces[i].image:view.src}")`;el.style.backgroundRepeat='no-repeat';el.style.backgroundSize=`${placement.w}px ${placement.h}px`;el.style.backgroundPosition=`${placement.x}px ${placement.y}px`;});
  if(s.protectPerson){
   // While recognition runs, keep the full original visible instead of cutting a face.
   if(!keepPortrait){$('#piece-left').style.clipPath='none';$('#piece-left').style.display='block';$('#piece-right').style.display='none';$('#person-status').textContent='正在本机识别人像…';}$('#retry-person').hidden=true;
@@ -151,11 +176,13 @@ async function renderDesktop(){
 
 function updateControls(){
  ['angle','ratio','gap'].forEach(key=>{$('#'+key).value=state[key];$('#'+key+'-value').textContent=Math.round(state[key])+(key==='angle'?'°':key==='ratio'?'%':' px');});
+ $('#bend').value=state.bend;$('#bend-value').textContent=(state.bend>0?'+':'')+Math.round(state.bend);$('#wave').value=state.wave;$('#wave-value').textContent=state.wave?state.wave+' 个':'无';$('#wave-amp').value=state.waveAmp;$('#wave-amp-value').textContent=Math.round(state.waveAmp);$('#wave-amp').disabled=state.mode==='single'||!state.wave;$('#bend').disabled=state.mode==='single';$('#wave').disabled=state.mode==='single';$('#shape-options').hidden=state.mode==='single';
  $('#angle').disabled=state.mode!=='diagonal';$('#ratio').disabled=state.mode==='single';$('#gap').disabled=state.mode==='single';$('#linked').disabled=state.mode==='single';
  $('#linked').checked=state.linked;
  for(const [id,key] of [['anchor-y','anchorY'],['source-cut','sourceRatio'],['focus-x','focusX'],['focus-y','focusY']]){$('#'+id).value=state[key];$('#'+id+'-value').textContent=Math.round(state[key]*10)/10+'%';}
  $('#split-handle').hidden=state.mode==='single';$('#split-start').hidden=state.mode==='single';$('#split-end').hidden=state.mode==='single';$('#anchor-y').disabled=state.mode==='single';$('#pick-split').disabled=state.mode==='single';$('#protect-person').checked=state.protectPerson;$('#linked').closest('.switch-row').querySelector('small').textContent=state.protectPerson?'拖动控制点，人物与画面一起移动':'左右画面随区域移动、缩放';
  $('#portrait-motion-hint').hidden=!state.protectPerson||!state.linked||state.mode==='single';
+ $('#piece-options').hidden=state.protectPerson;$$('.piece-card').forEach((card,i)=>{const q=state.pieces[i];card.hidden=i===1&&state.mode==='single';card.querySelector('.piece-source').textContent=q.image?'自己的图片':'共享壁纸';card.querySelector('.piece-shared').hidden=!q.image;card.querySelector('.piece-dx').value=q.dx;card.querySelector('.piece-dx-value').textContent=Math.round(q.dx)+'%';card.querySelector('.piece-dy').value=q.dy;card.querySelector('.piece-dy-value').textContent=Math.round(q.dy)+'%';card.querySelector('.piece-zoom').value=q.zoom;card.querySelector('.piece-zoom-value').textContent=Math.round(q.zoom)+'%';});
  $('#source-options').hidden=state.protectPerson||!state.linked||state.mode==='single';$('#source-preview').style.backgroundImage=`url("${source()}")`;$('#source-cut-marker').style.left=state.sourceRatio+'%';
  const polygons=geometry({...state,gap:0},1600,1600/state.aspect).polygons;
  const area=points=>Math.abs(points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2;
@@ -166,7 +193,7 @@ function updateControls(){
  $$('.preset-card').forEach(btn=>{btn.classList.toggle('selected',btn.dataset.preset===state.preset);btn.setAttribute('aria-pressed',String(btn.dataset.preset===state.preset));});
  $$('.wallpaper-card').forEach(btn=>btn.classList.toggle('selected',btn.dataset.wallpaper===state.wallpaper&&!state.customImage));
  $('.saved-count').textContent=String(saved.length);
- $('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=activeCopy(state).flip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
+ const look=activeCopy(state);for(const [id,key,unit] of [['float-rotate','rotate','°'],['float-opacity','opacity','%'],['float-hue','hue','°'],['float-saturate','saturate','%'],['float-brightness','brightness','%'],['float-glow','glow','']]){$('#'+id).value=look[key];$('#'+id+'-value').textContent=Math.round(look[key])+unit;}$('#float-glow-color').value=look.glowColor;$('#float-toggle').checked=state.floatPerson;$('#float-options').hidden=!state.floatPerson;$('#float-flip').checked=activeCopy(state).flip;$('#float-shadow').checked=state.floatShadow;$('#float-keep').checked=state.floatKeepOriginal;
  $('#protect-person').disabled=floating(state);if(!state.floatPerson)$('#float-status').textContent='打开后自动识别主体，也可以手动点选。';
  for(const m of Rider.modules)Rider.call(m,'sync',{s:state,panel:m.panel,api:Rider.api});
  $$('input[type=range]',$('#module-controls')).forEach(el=>el.style.setProperty('--progress',((Number(el.value)-Number(el.min))/(Number(el.max)-Number(el.min))*100)+'%'));
@@ -214,9 +241,9 @@ async function drawModules(ctx,s,w,h,view,pick){for(const m of Rider.modules){if
 // layers: 'all' (the PNG export), 'background' (wallpaper + modules below the person; what the
 // client sets as the system wallpaper) or 'overlay' (transparent: person copies + modules above;
 // what the client shows in its desktop-layer window).
-async function wallpaperCanvas(s,width=1600,{layers='all'}={}){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width/s.aspect);const ctx=canvas.getContext('2d');const w=canvas.width,h=canvas.height,bg=layers!=='overlay',fg=layers!=='background';if(bg){ctx.fillStyle=s.gapColor;ctx.fillRect(0,0,w,h);}const view=await scene(s),geo=geometry(s,w,h),below=m=>m.order<100;
+async function wallpaperCanvas(s,width=1600,{layers='all'}={}){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width/s.aspect);const ctx=canvas.getContext('2d');const w=canvas.width,h=canvas.height,bg=layers!=='overlay',fg=layers!=='background';if(bg){ctx.fillStyle=s.gapColor;ctx.fillRect(0,0,w,h);}const [view,own]=await Promise.all([scene(s),pieceImages(s)]),geo=geometry(s,w,h),below=m=>m.order<100;
  if(s.protectPerson&&!view.cut){const out=bg?(await Portrait.render(s,view.img,w,h,geo,view.src)).canvas:canvas,octx=out.getContext('2d');if(bg)await drawModules(octx,s,w,h,view,below);if(fg)await drawModules(octx,s,w,h,view,m=>!below(m));return out;}
- if(bg){geo.polygons.forEach((points,i)=>{if(!points.length)return;ctx.save();ctx.beginPath();points.forEach(([x,y],j)=>j?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();const placement=wallpaperPlacement(s,view.img,w,h,points,i);ctx.drawImage(view.img,placement.x,placement.y,placement.w,placement.h);ctx.restore();});await drawModules(ctx,s,w,h,view,below);}
+ if(bg){geo.polygons.forEach((points,i)=>{if(!points.length)return;ctx.save();ctx.beginPath();points.forEach(([x,y],j)=>j?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();const img=own[i]||view.img,placement=piecePlacement(s,img,w,h,points,i);ctx.drawImage(img,placement.x,placement.y,placement.w,placement.h);ctx.restore();});await drawModules(ctx,s,w,h,view,below);}
  if(fg){drawFloat(ctx,s,view,w,h);await drawModules(ctx,s,w,h,view,m=>!below(m));}return canvas;}
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function renderSaved(){const root=$('#saved-grid');root.replaceChildren();$('#empty-saved').hidden=saved.length>0;saved.forEach(entry=>{const card=document.createElement('article');card.className='saved-card';if(typeof entry.thumbnail==='string'&&entry.thumbnail.startsWith('data:image/')){const img=new Image();img.src=entry.thumbnail;img.alt=entry.name+'壁纸预览';card.append(img);}const content=document.createElement('div');content.className='saved-card-content';const heading=document.createElement('h3');heading.textContent=entry.name;const date=document.createElement('p');date.textContent='保存于 '+new Date(entry.createdAt).toLocaleDateString('zh-CN');const actions=document.createElement('div');actions.className='saved-card-actions';const load=document.createElement('button');load.className='button secondary';load.textContent='载入方案';load.addEventListener('click',()=>{state=normalizeState(entry.state);setView('design');update({zones:true,custom:false});toast('已载入「'+entry.name+'」');});const remove=document.createElement('button');remove.className='text-button';remove.textContent='删除';remove.addEventListener('click',()=>{const next=saved.filter(s=>s.id!==entry.id);try{localStorage.setItem('desktop-rider-schemes',JSON.stringify(next));saved=next;renderSaved();updateControls();toast('已删除方案「'+entry.name+'」');}catch{toast('删除未完成，无法写入浏览器存储');}});actions.append(load,remove);content.append(heading,date,actions);card.append(content);root.append(card);});}
@@ -224,12 +251,26 @@ $$('[data-view]').forEach(btn=>btn.addEventListener('click',()=>setView(btn.data
 $('.brand').addEventListener('click',e=>{e.preventDefault();setView('design');});
 $('#show-saved').addEventListener('click',()=>setView('saved'));$('#back-design').addEventListener('click',()=>setView('design'));
 $$('[data-mode]').forEach(btn=>btn.addEventListener('click',()=>{state.mode=btn.dataset.mode;pickingSplit=false;update();}));
-['angle','ratio','gap'].forEach(key=>$('#'+key).addEventListener('input',e=>{state[key]=Number(e.target.value);update();}));
+['angle','ratio','gap','bend','wave'].forEach(key=>$('#'+key).addEventListener('input',e=>{state[key]=Number(e.target.value);update();}));$('#wave-amp').addEventListener('input',e=>{state.waveAmp=Number(e.target.value);update();});$('#shape-reset').addEventListener('click',()=>{Object.assign(state,{bend:0,wave:0,waveAmp:8});update();});
 for(const [id,key] of [['anchor-y','anchorY'],['source-cut','sourceRatio'],['focus-x','focusX'],['focus-y','focusY']])$('#'+id).addEventListener('input',e=>{state[key]=Number(e.target.value);update();});
 $('#protect-person').addEventListener('change',e=>{state.protectPerson=e.target.checked;update();});
 $('#retry-person').addEventListener('click',()=>renderDesktop());
 $('#linked').addEventListener('change',e=>{state.linked=e.target.checked;update();});
 $('#gap-color').addEventListener('input',e=>{state.gapColor=e.target.value;update();});
+// Per-piece picture: own image, offset and zoom — from the cards, or by dragging / scrolling a piece in the preview.
+const pieceOf=el=>Number(el.closest('.piece-card').dataset.piece);
+$('#piece-options').addEventListener('input',e=>{const cls=e.target.classList,q=state.pieces[pieceOf(e.target)];if(cls.contains('piece-dx'))q.dx=Number(e.target.value);else if(cls.contains('piece-dy'))q.dy=Number(e.target.value);else if(cls.contains('piece-zoom'))q.zoom=Number(e.target.value);else return;update({custom:false});});
+$('#piece-options').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const i=pieceOf(b),q=state.pieces[i];
+ if(b.classList.contains('piece-pick')){$('#piece-file').dataset.piece=i;$('#piece-file').click();}
+ else if(b.classList.contains('piece-shared')){q.image=null;update({custom:false});toast((i?'右侧':'左侧')+'画面已改回共享壁纸');}
+ else if(b.classList.contains('piece-reset')){Object.assign(q,{dx:0,dy:0,zoom:100});update({custom:false});}});
+$('#piece-file').addEventListener('change',async e=>{const file=e.target.files[0],i=Number(e.target.dataset.piece)||0;e.target.value='';if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('请选择 JPG、PNG 或 WebP 图片');return;}if(file.size>20*1024*1024){toast('请选择小于 20 MB 的图片');return;}
+ const url=URL.createObjectURL(file);try{const img=await loadImage(url),max=1600,k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);state.pieces[i].image=c.toDataURL('image/jpeg',.88);Object.assign(state.pieces[i],{dx:0,dy:0,zoom:100});update({custom:false});toast((i?'右侧':'左侧')+'画面已换成「'+file.name+'」');}catch{toast('图片无法读取，请换一张图片重试');}finally{imageCache.delete(url);URL.revokeObjectURL(url);}});
+let pieceDrag=null;const pieceAt=e=>{const el=e.target.closest('.wallpaper-piece');return el&&!pickingSplit&&!state.protectPerson?Number(el.id==='piece-right'):null;};
+$('#desktop').addEventListener('pointerdown',e=>{const i=pieceAt(e);if(i===null||e.button!==0)return;const q=state.pieces[i];pieceDrag={id:e.pointerId,i,x:e.clientX,y:e.clientY,dx:q.dx,dy:q.dy,moved:false};e.target.setPointerCapture(e.pointerId);});
+$('#desktop').addEventListener('pointermove',e=>{if(pieceDrag?.id!==e.pointerId)return;const b=$('#desktop').getBoundingClientRect(),mx=e.clientX-pieceDrag.x,my=e.clientY-pieceDrag.y;if(!pieceDrag.moved&&Math.hypot(mx,my)<4)return;pieceDrag.moved=true;const q=state.pieces[pieceDrag.i];q.dx=Math.max(-100,Math.min(100,pieceDrag.dx+mx/b.width*100));q.dy=Math.max(-100,Math.min(100,pieceDrag.dy+my/b.height*100));update({custom:false});});
+const endPieceDrag=e=>{if(pieceDrag?.id===e.pointerId)pieceDrag=null;};$('#desktop').addEventListener('pointerup',endPieceDrag);$('#desktop').addEventListener('pointercancel',endPieceDrag);
+$('#desktop').addEventListener('wheel',e=>{const i=pieceAt(e);if(i===null)return;e.preventDefault();const q=state.pieces[i];q.zoom=Math.max(50,Math.min(300,q.zoom*Math.exp(-e.deltaY*.0015)));update({custom:false});},{passive:false});
 $('#aspect').addEventListener('change',e=>{state.aspect=Number(e.target.value);update();});
 $('#wallpaper-scale').addEventListener('input',e=>{state.scale=Number(e.target.value);update();});
 // Clean desktop, like macOS: hide everything but the wallpaper (footer button, a click on any zone
@@ -297,11 +338,19 @@ $('#float-toggle').addEventListener('change',async e=>{
 });
 $('#float-size').addEventListener('input',e=>{pinFloat();activeCopy(state).size=clampSize(Number(e.target.value));updateFloat();});
 $('#float-flip').addEventListener('change',e=>{activeCopy(state).flip=e.target.checked;updateFloat();});
+for(const [id,key] of [['float-rotate','rotate'],['float-opacity','opacity'],['float-hue','hue'],['float-saturate','saturate'],['float-brightness','brightness'],['float-glow','glow']])$('#'+id).addEventListener('input',e=>{pinFloat();activeCopy(state)[key]=Number(e.target.value);updateFloat();});
+$('#float-glow-color').addEventListener('input',e=>{activeCopy(state).glowColor=e.target.value;updateFloat();});
+$('#float-look-reset').addEventListener('click',()=>{const d=copyDefaults();for(const k of ['rotate','opacity','hue','saturate','brightness','glow','glowColor'])activeCopy(state)[k]=d[k];updateFloat();toast('已恢复这份人物的外观');});
+// Handles on the selection outline: corners scale the active copy about its centre, the knob above rotates it (Shift snaps to 15°).
+let handleDrag=null;const outlineEl=$('#float-outline');
+outlineEl.addEventListener('pointerdown',e=>{const hd=e.target.closest('.fo-handle');if(!hd)return;const f=pinFloat();if(!f)return;const b=$('#desktop').getBoundingClientRect(),cx=f.left+f.w/2,cy=f.top+f.h/2,px=e.clientX-b.left,py=e.clientY-b.top;handleDrag={id:e.pointerId,mode:hd.dataset.h==='rot'?'rotate':'scale',cx,cy,size:f.size,d0:Math.max(4,Math.hypot(px-cx,py-cy)),rotate0:activeCopy(state).rotate||0,a0:Math.atan2(py-cy,px-cx)};hd.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();});
+outlineEl.addEventListener('pointermove',e=>{if(handleDrag?.id!==e.pointerId)return;const b=$('#desktop').getBoundingClientRect(),px=e.clientX-b.left,py=e.clientY-b.top,c=activeCopy(state);if(handleDrag.mode==='scale')c.size=clampSize(handleDrag.size*Math.hypot(px-handleDrag.cx,py-handleDrag.cy)/handleDrag.d0);else{let r=handleDrag.rotate0+(Math.atan2(py-handleDrag.cy,px-handleDrag.cx)-handleDrag.a0)*180/Math.PI;r=((r+180)%360+360)%360-180;if(e.shiftKey)r=Math.round(r/15)*15;c.rotate=Math.round(r);}updateFloat();});
+const endHandle=e=>{if(handleDrag?.id===e.pointerId)handleDrag=null;};outlineEl.addEventListener('pointerup',endHandle);outlineEl.addEventListener('pointercancel',endHandle);
 $('#float-shadow').addEventListener('change',e=>{state.floatShadow=e.target.checked;updateFloat();});
 $('#float-keep').addEventListener('change',e=>{state.floatKeepOriginal=e.target.checked;update();});
 $('#float-reset').addEventListener('click',()=>{Object.assign(activeCopy(state),{x:null,y:null,size:null});updateFloat();toast('人物已放回原位置');});
 // Copies: duplicate the active one a little offset, delete it, or move it through the stack.
-$('#float-duplicate').addEventListener('click',()=>{const f=pinFloat();if(!f||state.floatCopies.length>=12)return;state.floatCopies.push({x:clampFloat(f.x+6),y:clampFloat(f.y+6),size:f.size,flip:f.flip});state.floatActive=state.floatCopies.length-1;updateFloat();toast('已复制一份人物，拖动可分开摆放');});
+$('#float-duplicate').addEventListener('click',()=>{const f=pinFloat();if(!f||state.floatCopies.length>=12)return;state.floatCopies.push({...activeCopy(state),x:clampFloat(f.x+6),y:clampFloat(f.y+6),size:f.size,flip:f.flip});state.floatActive=state.floatCopies.length-1;updateFloat();toast('已复制一份人物，拖动可分开摆放');});
 $('#float-delete').addEventListener('click',()=>{if(state.floatCopies.length<2)return;state.floatCopies.splice(state.floatActive,1);state.floatActive=Math.min(state.floatActive,state.floatCopies.length-1);updateFloat();});
 const moveCopy=dir=>{const i=state.floatActive,j=i+dir;if(j<0||j>=state.floatCopies.length)return;[state.floatCopies[i],state.floatCopies[j]]=[state.floatCopies[j],state.floatCopies[i]];state.floatActive=j;updateFloat();};
 $('#float-up').addEventListener('click',()=>moveCopy(1));$('#float-down').addEventListener('click',()=>moveCopy(-1));
@@ -406,7 +455,7 @@ new ResizeObserver(()=>scheduleRender()).observe($('#desktop'));
 function updateClock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});$('.desktop-top>span:last-child').firstChild.textContent=now.toLocaleDateString('zh-CN',{weekday:'short',month:'long',day:'numeric'})+' ';Rider.emit('tick',now);}
 updateClock();setInterval(updateClock,60000);
 // Modules (core.js): what a module may use of the app. Getters read live values.
-Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,wallpaperPlacement,useImage,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
+Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,wallpaperPlacement,piecePlacement,useImage,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
 let booted=false;
 function mountModule(mod){
  mod.panel=document.createElement('div');mod.panel.className='module-panel';mod.panel.id='module-'+mod.id;mod.panel.hidden=true;$('#module-controls').append(mod.panel);

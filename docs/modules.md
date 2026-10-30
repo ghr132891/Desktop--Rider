@@ -53,6 +53,7 @@ Rider.register({
 | `loadImage(src)`、`source()`、`scene(s)` | 壁纸图片、当前壁纸地址、含抠图的场景 |
 | `geometry(s,w,h)`、`floating(s)` | 分裂几何、人物是否悬浮 |
 | `wallpaperPlacement(s,img,w,h,polygon,index)` | 某块分区里壁纸的目标矩形 `{x,y,w,h}`；`img` 只需 `naturalWidth / naturalHeight`，视频也可用 |
+| `piecePlacement(s,img,w,h,polygon,index)` | 同上，但叠加了该分区自己的偏移与缩放（`state.pieces[index]`）；跟随分区的图层应使用这个 |
 | `useImage(drawable,width,height,name)` | 把任意可绘制对象（图片、位图、视频帧）设为自定义壁纸，与导入图片走同一路径 |
 | `scheduleRender()` / `renderDesktop()` | 重绘预览（模块自身计时器驱动的内容可直接改图层 DOM，不必走这里） |
 | `createItem(name,kind)`、`moveItem(id,zoneId)` | 收纳分区中的快捷项；`kind` 为 file / folder / image / code / music |
@@ -65,11 +66,14 @@ Rider.register({
 - **桌面歌词**：从 `note.js` 复制，`order` 保持 200；状态存样式与位置，歌词文本不存方案。播放源（本地音频元素、系统播放器接口）在 `mount` 里建立，用自己的计时器更新 `layer` 里的文字；`draw` 画当前行以便导出截图。真正读取系统正在播放的曲目需要原生客户端提供接口，模块里预留一个 `source` 适配器即可。
 - **文件管理**：声明 `view:{page:true}`，`page` 放目录浏览，`panel` 放筛选与整理选项；目录句柄与索引放 `Rider.storage('files')`，真实文件不进方案；通过 `api.createItem` / `api.moveItem` 把文件映射为分区里的快捷项。浏览器内只能读取用户选择的目录（`showDirectoryPicker`），移动、删除文件要等原生客户端。
 - **时钟 / 天气 / 便签**：与桌面文字同构，各自一个模块文件。
+- **自由画布元素**（参考 `modules/layers.js` 图层）：元素坐标用桌面百分比（中心点 + 宽高），预览用 `left/top/width/height` + `transform` + `filter` + `mix-blend-mode`，导出在 `draw` 里用同样的 `translate / rotate / scale`、`ctx.filter` 与 `globalCompositeOperation` 重画，这样两边逐像素一致。需要既有「人物之下」又有「人物之上」的内容时，再注册一个只带 `render / draw` 的伴随模块（`order ≥ 100`，`panelView:'none'` 让它没有面板），两者共用主模块的状态切片；选中框放在伴随模块的图层里（z 18）才能盖住人物副本。
 - **逐帧视觉处理**（参考 `modules/live.js` 的逐帧人物提取）：`Portrait.segmentVideo(bitmap,timestamp)` 把一帧（缩到 384 px 宽的 ImageBitmap）送进 Worker 里 VIDEO 模式的人像模型，返回 `{width,height,values}` 置信度；一次只送一帧，拿到结果再送下一帧。合成在主线程 canvas 上做（`destination-in` 套蒙版；蒙版要与送检的那一帧一起用，所以先 `createImageBitmap(video)` 留住全分辨率帧，再缩小送 Worker；动态背景用一张指数平均的背景板：非人物区域逐帧从视频更新，人物区域保持静帧补全），悬浮副本的静态 `<img>` 保留用于拖动与命中，自己的画布叠在 `z-index 15`（副本之上、选中框之下）。
 - **跟随壁纸分区的图层**（参考 `modules/live.js` 动态壁纸）：`order < 100`，监听 `render` 事件后读取 `#piece-left / #piece-right` 的 `clipPath`、`backgroundSize`、`backgroundPosition`，让自己的画布与分区逐像素对齐；大文件放 IndexedDB，方案里只存元数据；给客户端提供 `exportFor(s,w,h)` 之类的方法（不要用保留钩子名）返回按显示器分辨率算好的几何。
 - **原生客户端**：把 `Rider.api` 之外的系统能力（设壁纸、枚举显示器、监听播放器）做成单独的模块或 `api` 扩展，界面层无需改动。
 
 ## 验证
+
+`node tools/verify-canvas.cjs`：图层模块与核心的自由画布控制（分割线形状、分区画面、人物副本外观与手柄）。
 
 `node tools/verify-live.cjs`：动态壁纸模块（视频导入、静帧、分区画布对齐、播放规则、客户端方案、持久化）。
 

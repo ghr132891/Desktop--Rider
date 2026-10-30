@@ -78,7 +78,7 @@ Rider.register({
  // After every desktop render, mirror the wallpaper pieces: same clip polygon, same placement.
  syncPieces(s,w,h){
   const live=this.playing(s),dpr=devicePixelRatio||1;
-  this.pieces=['#piece-left','#piece-right'].map((id,i)=>{const el=document.querySelector(id),c=this.canvases[i],show=live&&el.style.display!=='none'&&!!el.style.backgroundImage;c.hidden=!show;if(!show)return null;
+  this.pieces=['#piece-left','#piece-right'].map((id,i)=>{const el=document.querySelector(id),c=this.canvases[i],show=live&&el.style.display!=='none'&&!!el.style.backgroundImage&&!el.dataset.own;c.hidden=!show;if(!show)return null;
    const size=el.style.backgroundSize.split(' ').map(parseFloat),pos=el.style.backgroundPosition.split(' ').map(parseFloat);c.style.clipPath=el.style.clipPath||'none';
    const cw=Math.round(w*dpr),ch=Math.round(h*dpr);if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;}c.style.width=w+'px';c.style.height=h+'px';
    return {c,x:pos[0],y:pos[1],w:size[0],h:size[1],dpr};}).filter(Boolean);
@@ -146,9 +146,8 @@ Rider.register({
   while(this.copies.children.length<imgs.length){const c=document.createElement('canvas');c.className='live-copy';this.copies.append(c);}
   imgs.forEach((el,i)=>{const c=this.copies.children[i],f={left:parseFloat(el.style.left),top:parseFloat(el.style.top),w:parseFloat(el.style.width),h:parseFloat(el.style.height)};if(![f.left,f.top,f.w,f.h].every(Number.isFinite))return;
    const sx=f.w/b.w,sy=f.h/b.h,left=f.left+(W.x/vw-b.x)*sx,top=f.top+(W.y/vh-b.y)*sy,width=W.w/vw*sx,height=W.h/vh*sy;
-   Object.assign(c.style,{left:left+'px',top:top+'px',width:width+'px',height:height+'px',zIndex:1+i,transformOrigin:(f.left+f.w/2-left)+'px center'});
+   Object.assign(c.style,{left:left+'px',top:top+'px',width:width+'px',height:height+'px',zIndex:1+i,transformOrigin:(f.left+f.w/2-left)+'px '+(f.top+f.h/2-top)+'px',transform:el.style.transform,filter:el.style.filter,opacity:el.style.opacity});
    c.style.setProperty('--shadow-y',el.style.getPropertyValue('--shadow-y'));c.style.setProperty('--shadow-blur',el.style.getPropertyValue('--shadow-blur'));
-   c.classList.toggle('flip',el.classList.contains('flip'));c.classList.toggle('shadow',el.classList.contains('shadow'));
    if(c.width!==this.personCanvas.width||c.height!==this.personCanvas.height){c.width=this.personCanvas.width;c.height=this.personCanvas.height;}
    const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);if(this.personReady)ctx.drawImage(this.personCanvas,0,0);});
  },
@@ -161,7 +160,7 @@ Rider.register({
  async exportFor(s,w,h){
   const m=s.modules.live;if(!m.enabled||!this.file||this.missing||(s.protectPerson&&!this.api.floating(s)))return null;await this.ready();
   const geo=this.api.geometry(s,w,h),dims={naturalWidth:this.video.videoWidth,naturalHeight:this.video.videoHeight},round=v=>Math.round(v*100)/100;
-  const pieces=geo.polygons.map((points,i)=>{if(!points.length)return null;const p=this.api.wallpaperPlacement(s,dims,w,h,points,i);return {polygon:points.map(([x,y])=>[round(x),round(y)]),x:round(p.x),y:round(p.y),w:round(p.w),h:round(p.h)};}).filter(Boolean);
+  const pieces=geo.polygons.map((points,i)=>{if(!points.length||s.pieces?.[i]?.image)return null;const p=this.api.piecePlacement(s,dims,w,h,points,i);return {polygon:points.map(([x,y])=>[round(x),round(y)]),x:round(p.x),y:round(p.y),w:round(p.w),h:round(p.h)};}).filter(Boolean);
   return {name:m.name,type:this.file.type||'video/mp4',bytes:await this.file.arrayBuffer(),plan:{width:w,height:h,gapColor:s.gapColor,pieces}};
  }
 });

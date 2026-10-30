@@ -47,6 +47,8 @@ npm run dist
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
+分割线为弧形 / 波浪时方案里的多边形最多 50 个点（校验上限 128）；换成自己图片的分区不在播放方案里，层页面把静帧 PNG 铺在底下，那块就显示静帧。图层模块的视频层在桌面上只显示当前帧（随静帧与叠加层一起渲染）。
+
 渲染分层由网页侧 `wallpaperCanvas(s,width,{layers})` 提供：`background`（壁纸 + 人物之下的模块）设为系统壁纸，`overlay`（透明：人物副本 + 人物之上的模块）给桌面层；两者叠加与导出 PNG 逐像素一致（`tools/verify-client.cjs` 校验）。没有任何悬浮内容时不创建桌面层。
 
 ## 桌面层的工作方式与边界
