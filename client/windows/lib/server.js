@@ -11,9 +11,11 @@ function resolveFile(root,urlPath){
  if(file!==root&&!file.startsWith(root+path.sep))return null; // never leave the web root
  return file;
 }
-function start(root,{host='127.0.0.1',port=0}={}){
+// `api(req,res)` may claim requests under /api/ (returns true when handled) — the mascot's external-AI endpoints (main.js).
+function start(root,{host='127.0.0.1',port=0,api=null}={}){
  root=path.resolve(root);
  const server=http.createServer((req,res)=>{
+  if(api&&(req.url||'').startsWith('/api/')){try{if(api(req,res))return;}catch(error){res.writeHead(500,{'Content-Type':'application/json'}).end(JSON.stringify({ok:false,error:String(error.message||error)}));return;}}
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405).end();return;}
   const file=resolveFile(root,req.url||'/');
   if(!file){res.writeHead(403).end();return;}

@@ -38,4 +38,17 @@ function checkLyrics(l){
  return {source:{mode:src.mode==='manual'?'manual':'auto',provider:PROVIDERS.includes(src.provider)?src.provider:'auto',query:str(src.query,120),lrc:str(src.lrc,60000),offset},
   style:{left:st.left,top:st.top,width:st.width,size:st.size,font:str(st.font,300)||'sans-serif',weight:st.weight,color:st.color.toLowerCase(),highlight:(st.highlight||st.color).toLowerCase(),glow:st.glow??0,stroke:st.stroke===true,strokeColor:(st.strokeColor||'#000000').toLowerCase(),shadow:st.shadow!==false,backdrop:st.backdrop??0,backdropBlur:st.backdropBlur??12,align:st.align,display:st.display||'single',stageLines:Number(st.stageLines)===5?5:3,transition:st.transition,duration:st.duration,next:st.next!==false,nextOpacity:st.nextOpacity,trans:st.trans!==false,interlude:st.interlude!==false,offset}};
 }
-module.exports={checkLive,checkClips,checkLyrics};
+// 萌版人物 payload from modules/mascot.js: rig (head / body PNG data URLs + geometry + face spots) and style in px.
+function checkMascot(m){
+ if(m==null)return null;if(typeof m!=='object'||!m.rig||typeof m.rig!=='object'||!m.style||typeof m.style!=='object')throw new Error('萌版人物数据无效');
+ const num=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max,png=v=>typeof v==='string'&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v)&&v.length<12*1024*1024,pt=p=>p&&num(p.x,-5,5)&&num(p.y,-5,5),len=v=>typeof v==='string'&&/^-?\d+(\.\d+)?(px|%)$/.test(v);
+ const part=(p,pivot)=>{if(!p||!png(p.url)||![p.x,p.y,p.w,p.h].every(v=>num(v,-1e5,1e5))||p.w<=0||p.h<=0||(pivot&&!(p.pivot&&num(p.pivot.x,-1e5,1e5)&&num(p.pivot.y,-1e5,1e5))))throw new Error('萌版人物骨架无效');return {url:p.url,x:p.x,y:p.y,w:p.w,h:p.h,...(pivot?{pivot:{x:p.pivot.x,y:p.pivot.y}}:{})};};
+ const r=m.rig,f=r.face||{};if(!num(r.width,1,1e5)||!num(r.height,1,1e5))throw new Error('萌版人物骨架无效');
+ const face={eyes:Array.isArray(f.eyes)&&f.eyes.length===2&&f.eyes.every(pt)?f.eyes.map(p=>({x:p.x,y:p.y})):[{x:.36,y:.52},{x:.64,y:.52}],mouth:pt(f.mouth)?{x:f.mouth.x,y:f.mouth.y}:{x:.5,y:.74},blush:Array.isArray(f.blush)&&f.blush.length===2&&f.blush.every(pt)?f.blush.map(p=>({x:p.x,y:p.y})):[{x:.27,y:.64},{x:.73,y:.64}],size:num(f.size,.02,1)?f.size:.18,detected:f.detected===true};
+ const st=m.style;if(!len(st.left)||!len(st.top)||!num(st.size,10,4000))throw new Error('萌版人物样式无效');
+ const stickers=st.stickers&&typeof st.stickers==='object'?st.stickers:{},mo=st.mouthOffset&&typeof st.mouthOffset==='object'?st.mouthOffset:{};
+ const phrases={};if(m.phrases&&typeof m.phrases==='object')for(const [k,v] of Object.entries(m.phrases))if(/^[a-z]{1,16}$/.test(k)&&Array.isArray(v))phrases[k]=v.filter(x=>typeof x==='string').map(x=>x.slice(0,80)).slice(0,20);
+ return {rig:{head:part(r.head,true),body:part(r.body,false),width:r.width,height:r.height,face,params:r.params&&typeof r.params==='object'?{headScale:Number(r.params.headScale)||1.7,bodyScale:Number(r.params.bodyScale)||.78,bodySquash:Number(r.params.bodySquash)||.72}:{}},
+  style:{left:st.left,top:st.top,size:st.size,flip:st.flip===true,shadow:st.shadow!==false,stickers:{blush:stickers.blush!==false,eyes:stickers.eyes===true,mouth:stickers.mouth===true},mouthOffset:{x:num(mo.x,-1,1)?mo.x:0,y:num(mo.y,-1,1)?mo.y:0},singBubble:st.singBubble!==false,idle:st.idle!==false,reactMusic:st.reactMusic!==false,onTop:st.onTop!==false},phrases};
+}
+module.exports={checkLive,checkClips,checkLyrics,checkMascot};

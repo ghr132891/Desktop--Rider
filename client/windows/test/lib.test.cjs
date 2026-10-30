@@ -145,3 +145,19 @@ test('QRC: QQ\'s DES variant matches the reference vectors; a round trip through
   throw new Error('unexpected '+url);};
  return L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch,provider:'qq'}).then(r=>{assert.equal(r.provider,'qq');assert.equal(r.words,true);assert.equal(r.lines.length,2);assert.equal(r.lines[0].words[3].text,'Jay');});
 });
+
+test('mascot payload is validated; the loopback server hands /api/ requests to the hook',async()=>{
+ const {checkMascot}=require('../lib/live');const png='data:image/png;base64,iVBORw0KGgo=';
+ const rig={head:{url:png,x:0,y:0,w:100,h:120,pivot:{x:50,y:110}},body:{url:png,x:20,y:100,w:60,h:80},width:100,height:180,face:{eyes:[{x:.3,y:.5},{x:.7,y:.5}],mouth:{x:.5,y:.7},blush:[{x:.2,y:.6},{x:.8,y:.6}],size:.2,detected:true},params:{headScale:1.7,bodyScale:.78,bodySquash:.72}};
+ const style={left:'960px',top:'1000px',size:300,flip:false,shadow:true,stickers:{blush:true,eyes:true,mouth:false},mouthOffset:{x:0,y:.1},singBubble:true,idle:true,reactMusic:true,onTop:true};
+ assert.equal(checkMascot(null),null);const ok=checkMascot({rig,style,phrases:{tap:['嘿',123],bad_key:['x']}});
+ assert.equal(ok.rig.face.detected,true);assert.equal(ok.style.stickers.eyes,true);assert.equal(ok.style.onTop,true);assert.deepEqual(ok.phrases,{tap:['嘿']});assert.equal(ok.rig.head.pivot.x,50);
+ assert.throws(()=>checkMascot({rig:{...rig,head:{...rig.head,url:'http://x/y.png'}},style}),/骨架/);assert.throws(()=>checkMascot({rig,style:{...style,size:5}}),/样式/);assert.throws(()=>checkMascot({rig:{...rig,body:null},style}),/骨架/);assert.throws(()=>checkMascot('x'),/无效/);
+ const server=require('../lib/server'),http=require('node:http'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'dr-api-'));fs.writeFileSync(path.join(root,'index.html'),'<p>hi</p>');
+ const seen=[];const web=await server.start(root,{api:(req,res)=>{seen.push(req.method+' '+req.url);if(req.url.startsWith('/api/mascot/')){res.writeHead(200,{'Content-Type':'application/json'});res.end('{"ok":true}');return true;}return false;}});
+ const get=(p,method='GET')=>new Promise((resolve,reject)=>{const r=http.request(web.url.replace(/\/$/,'')+p,{method,agent:false,headers:{Connection:'close'}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,body:b}));});r.on('error',reject);r.end();});
+ assert.deepEqual(await get('/api/mascot/state'),{status:200,body:'{"ok":true}'});assert.equal((await get('/api/mascot/command','POST')).status,200,'POST reaches the hook before the GET-only static server');
+ assert.equal((await get('/api/other')).status,404,'unclaimed /api/ paths fall through to the static server');assert.equal((await get('/api/other','POST')).status,405);assert.equal((await get('/index.html')).status,200);
+ assert.deepEqual(seen,['GET /api/mascot/state','POST /api/mascot/command','GET /api/other','POST /api/other']);web.server.closeAllConnections?.();await web.close();
+});

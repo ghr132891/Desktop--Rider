@@ -156,6 +156,28 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.equal(lyricStyle.ready,true,'lyrics-view.js loaded from the web root');assert.equal(lyricStyle.sheet,true,'lyrics-view.css loaded');assert.equal(lyricStyle.hidden,false);assert.ok(Math.abs(lyricStyle.fontSize-primary.height*.05)<1,'5 % of the monitor height in px: '+lyricStyle.fontSize);assert.equal(lyricStyle.color,'rgb(0, 255, 0)');assert.equal(lyricStyle.transition,'fade');assert.equal(lyricStyle.display,'karaoke');assert.equal(lyricStyle.hl,'#ff00ff');assert.ok(wordFill,'karaoke: a word was mid-fill in the layer window');assert.equal(lyricStyle.media,null,'no media session on the runner → own clock');
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('2d-lyrics.png');await showMain(app);
 
+  // 3e. 萌版人物: the cut-out person becomes an always-on-top, click-through mascot window; the external-AI HTTP API
+  //     (token file in userData) accepts a command, reports state and streams the resulting event.
+  await page.evaluate(()=>{state.modules.mascot.enabled=true;update({custom:false});});
+  await until(page,async()=>{const m=Rider.modules.find(x=>x.id==='mascot');return m.rig?{face:m.rig.face.detected}:m.rigError?{error:m.rigError}:null;},'the mascot rig',120000).then(r=>{log('mascot rig',r);assert.ok(!r.error,r.error);});
+  await page.evaluate(()=>{document.querySelector('#client-status').textContent='';});await page.locator('.client-monitor').nth(primary.index).click();
+  await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
+  const mascotList=await page.evaluate(()=>desktopRider.mascots());log('mascot windows',{mascotList});assert.equal(mascotList.length,1);assert.equal(mascotList[0].onTop,true);assert.ok(Number.isInteger(mascotList[0].hwnd)&&mascotList[0].hwnd>0);
+  const mascotInfo=await bridge.layerInfo(mascotList[0].hwnd);log('mascot window',mascotInfo);assert.equal(mascotInfo.valid,true);assert.equal(mascotInfo.visible,true);assert.ok(mascotInfo.width>100&&mascotInfo.height>100);
+  const mascotWin=()=>app.windows().find(w=>w.url().includes('mascot.html'));
+  await until(page,async()=>true,'noop',1).catch(()=>{});for(const t0=Date.now();Date.now()-t0<20000;){const w=mascotWin();if(w&&await w.evaluate(()=>window.__mascot&&window.__mascot.ready).catch(()=>false))break;await page.waitForTimeout(400);}
+  const mascotReady=await mascotWin().evaluate(()=>({ready:window.__mascot.ready,state:window.__mascot.state()}));log('mascot page',mascotReady);assert.equal(mascotReady.ready,true);assert.equal(mascotReady.state.rig,true);
+  const apiInfo=JSON.parse(fs.readFileSync(path.join(userData,'mascot-api.json'),'utf8'));assert.match(apiInfo.url,/^http:\/\/127\.0\.0\.1:\d+$/);assert.ok(apiInfo.token.length>10);
+  const http=require('node:http');const call=(p,method,body,headers={})=>new Promise((resolve,reject)=>{const r=http.request(apiInfo.url+p,{method,headers:{Authorization:'Bearer '+apiInfo.token,'Content-Type':'application/json',...headers}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,body:b}));});r.on('error',reject);if(body)r.write(body);r.end();});
+  assert.equal((await call('/api/mascot/state','GET',null,{Authorization:'Bearer nope'})).status,401,'token required');
+  const sse=await new Promise((resolve,reject)=>{const chunks=[];const r=http.get(apiInfo.url+'/api/mascot/events?token='+apiInfo.token,res=>{res.on('data',c=>{chunks.push(String(c));if(chunks.join('').includes('"emote"')){res.destroy();resolve(chunks.join(''));}});});r.on('error',reject);setTimeout(()=>{r.destroy();resolve(chunks.join(''));},8000);
+   setTimeout(()=>call('/api/mascot/command','POST',JSON.stringify([{type:'emote',name:'cheer'},{type:'say',text:'CI 你好'}])).then(r=>log('mascot command',r)),600);});
+  log('mascot events',{sse:sse.slice(0,200)});assert.ok(sse.includes('"type":"emote"')&&sse.includes('"name":"cheer"'),'the command shows up on the event stream');
+  const mascotState=JSON.parse((await call('/api/mascot/state','GET')).body);log('mascot state',mascotState);assert.equal(mascotState.ok,true);assert.equal(mascotState.mascots[0].state.rig,true);
+  assert.equal(await mascotWin().evaluate(()=>document.querySelector('.m-bubble').textContent),'CI 你好','the say command reached the window');
+  await hideMain(app);await page.waitForTimeout(1200);await screenshot('2e-mascot.png');await showMain(app);
+  await page.evaluate(()=>{state.modules.mascot.enabled=false;update({custom:false});});
+
   // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
    rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
@@ -198,6 +220,6 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window (paused behind a maximised window, resumed after), showed karaoke 桌面歌词 (QRC word fill) cycling in the layer window, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window (paused behind a maximised window, resumed after), showed karaoke 桌面歌词 (QRC word fill) cycling in the layer window, put a 萌版人物 window on top and drove it over the HTTP API, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
  console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});

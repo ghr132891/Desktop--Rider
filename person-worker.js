@@ -34,12 +34,22 @@ function videoSegmenter(){
  })().catch(error=>{videoPromise=null;throw error;});
  return videoPromise;
 }
+// BlazeFace (short range) for the 萌版人物 rig (mascot-view.js): face box + 6 keypoints (eyes, nose, mouth, ears).
+let facePromise;
+function faceDetector(){
+ if(!facePromise)facePromise=(async()=>{
+  const {tasks,files}=await vision();
+  return tasks.FaceDetector.createFromOptions(files,{baseOptions:{modelAssetPath:new URL('./assets/models/blaze_face_short_range.tflite',self.location.href).href,delegate:'CPU'},runningMode:'IMAGE',minDetectionConfidence:.4});
+ })().catch(error=>{facePromise=null;throw error;});
+ return facePromise;
+}
 function reply(id,mask){const values=new Float32Array(mask.getAsFloat32Array());self.postMessage({id,width:mask.width,height:mask.height,values},[values.buffer]);}
 let queue=Promise.resolve(),lastStamp=0;
-self.onmessage=({data:{id,bitmap,point,video,timestamp}})=>{
+self.onmessage=({data:{id,bitmap,point,video,timestamp,face}})=>{
  queue=queue.then(async()=>{
   try{
-   if(video){const model=await videoSegmenter();lastStamp=Math.max(lastStamp+1,Math.round(timestamp||0));model.segmentForVideo(bitmap,lastStamp,result=>{const masks=result.confidenceMasks;reply(id,masks[masks.length===1?0:1]);});}
+   if(face){const model=await faceDetector(),w=bitmap.width,h=bitmap.height,result=model.detect(bitmap);self.postMessage({id,faces:(result.detections||[]).map(d=>({score:d.categories?.[0]?.score||0,box:{x:d.boundingBox.originX/w,y:d.boundingBox.originY/h,w:d.boundingBox.width/w,h:d.boundingBox.height/h},keypoints:(d.keypoints||[]).map(k=>({x:k.x,y:k.y}))}))});}
+   else if(video){const model=await videoSegmenter();lastStamp=Math.max(lastStamp+1,Math.round(timestamp||0));model.segmentForVideo(bitmap,lastStamp,result=>{const masks=result.confidenceMasks;reply(id,masks[masks.length===1?0:1]);});}
    else if(point){const model=await interactive();model.segment(bitmap,{keypoint:point},result=>reply(id,result.confidenceMasks[0]));}
    else{const model=await segmenter();model.segment(bitmap,result=>{const masks=result.confidenceMasks;reply(id,masks[masks.length===1?0:1]);});}
   }catch(error){self.postMessage({id,error:String(error.message||error)});}

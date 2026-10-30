@@ -12,7 +12,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
  await page.locator('#piece-left').evaluate(el=>new Promise(r=>{const c=()=>el.style.backgroundImage?r():requestAnimationFrame(c);c();}));
  assert.match(page.url(),/^http:\/\/127\.0\.0\.1:\d+\/$/,'served from the loopback server');
  assert.equal(await page.title(),'Desktop Rider · 桌面设计室');
- assert.deepEqual(await page.evaluate(()=>Object.keys(window.desktopRider).sort()),['applyWallpaper','clearLayer','getSettings','layers','monitors','onStatus','platform','setSettings','version']);
+ assert.deepEqual(await page.evaluate(()=>Object.keys(window.desktopRider).sort()),['applyWallpaper','clearLayer','getSettings','layers','mascotApi','mascots','monitors','onStatus','platform','setSettings','version']);
  // The client module registered and lists this machine's displays.
  assert.ok(await page.evaluate(()=>Rider.modules.some(m=>m.id==='client')));
  await page.locator('[data-view="client"]').click();await page.waitForFunction(()=>document.querySelectorAll('.client-monitor').length>0);

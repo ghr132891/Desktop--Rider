@@ -100,7 +100,7 @@ const assert=require('node:assert/strict');
 
  // 4. 图层 module: shape, image, direct manipulation, blend, above/below, list, export, persistence.
  await page.evaluate(()=>{state={...clone(defaults),mode:'single',gapColor:'#ffffff'};update({zones:true});});await ready();
- assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['live','layers','note','lyrics','layers-top']);
+ assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['live','layers','note','lyrics','mascot','layers-top']);
  await page.locator('[data-view="layers"]').click();await page.locator('#layers-add-shape').click();await settled();
  let item=await page.evaluate(()=>state.modules.layers.items[0]);assert.equal(item.type,'shape');assert.equal(await page.evaluate(()=>state.modules.layers.active),item.id);
  await page.locator('#layers-fill').fill('#ff0000');await settled();

@@ -9,6 +9,8 @@ const Portrait = (()=>{
  function segmentAt(img,x,y){return ask(img,{x,y});}
  // One video frame (an ImageBitmap, transferred) through the tracker; resolves {width,height,values}.
  function segmentVideo(bitmap,timestamp){return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,video:true,timestamp},[bitmap]);});}
+ // BlazeFace on a bitmap (any size): [{score,box:{x,y,w,h} normalised,keypoints:[rightEye,leftEye,nose,mouth,rightEar,leftEar]}] — for the 萌版人物 rig.
+ function detectFace(bitmap){return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,face:true},[bitmap]);});}
  async function detect(img,key){
   if(cache.has(key))return cache.get(key);
   const task=(async()=>{const result=await ask(img);
@@ -63,5 +65,5 @@ const Portrait = (()=>{
   }
   ctx.putImageData(pixels,0,0);return {canvas:out,person};
  }
- return {detect,segmentAt,segmentVideo,render,placement,clear(){prepared.clear();}};
+ return {detect,segmentAt,segmentVideo,detectFace,render,placement,clear(){prepared.clear();}};
 })();

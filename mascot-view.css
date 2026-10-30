@@ -1,0 +1,30 @@
+/* 萌版人物 (mascot-view.js) — shared by the web preview and the client's mascot window. The root sits at (left,top)
+   with its feet at that point; --happy, --mouth, --eyes, --tint are written by the animation loop. */
+.mascot{position:absolute;transform:translate(-50%,-100%);user-select:none;-webkit-user-select:none;--happy:.5;--mouth:0;--eyes:0;--tint:0;--m-font:inherit}
+.mascot.interactive{cursor:grab;touch-action:none}.mascot.interactive:active,.mascot[data-emote=carried]{cursor:grabbing}
+.m-stage{position:relative;transform-origin:50% 100%;will-change:transform}
+.m-body,.m-headwrap{position:absolute;display:block;will-change:transform}
+.m-body{transform-origin:50% 0;-webkit-user-drag:none}
+.m-head{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-user-drag:none;filter:drop-shadow(0 .4px 0 rgba(0,0,0,.08))}
+.mascot[data-emote=angry] .m-head,.mascot[data-emote=angry] .m-body{filter:sepia(.2) saturate(1.4) hue-rotate(-12deg) brightness(1.02)}
+.mascot[data-emote=love] .m-head,.mascot[data-emote=shy] .m-head{filter:saturate(1.15) brightness(1.03)}
+.mascot[data-emote=sleep] .m-stage{filter:brightness(.92) saturate(.85)}
+/* stickers: placed from the face keypoints, sized by --fs (eye distance) */
+.m-face{position:absolute;inset:0;pointer-events:none;--fs:20px}
+.m-face i{position:absolute;display:none;transform:translate(-50%,-50%)}
+.m-face.blush .m-blush{display:block;width:calc(var(--fs)*.9);height:calc(var(--fs)*.55);border-radius:50%;background:radial-gradient(ellipse at center,rgba(255,120,140,calc(.35 + var(--tint)*.4)) 0%,rgba(255,120,140,0) 70%)}
+.m-face.eyes .m-eye{display:block;width:calc(var(--fs)*.42);height:calc(var(--fs)*.5*(1 - var(--eyes)*.85));border-radius:50% 50% 48% 48%;background:radial-gradient(circle at 40% 35%,#fff 0 18%,#2b2b2b 22% 100%);box-shadow:inset 0 -2px 0 rgba(255,255,255,.35);transition:height .08s}
+.m-face.mouth .m-mouth{display:block;width:calc(var(--fs)*(.42 + var(--mouth)*.1));height:calc(var(--fs)*(.08 + var(--mouth)*.45));border-radius:0 0 50% 50%/0 0 100% 100%;background:#5b1f2b;box-shadow:inset 0 calc(var(--fs)*-.08) 0 #f06a7a}
+.mascot[data-emote=angry] .m-face.mouth .m-mouth{border-radius:50% 50% 0 0/100% 100% 0 0}
+/* particles */
+.m-fx{position:absolute;inset:-20% -10% 0;pointer-events:none;overflow:visible}
+.m-p{position:absolute;font-size:1.2em;animation:m-rise var(--dur,1.2s) ease-out forwards;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+.m-p.heart{color:#ff5c8a}.m-p.note,.m-p.note2{color:#ffd166}.m-p.spark{color:#fff3a0}.m-p.anger{font-size:1.5em}.m-p.zz{color:#9ab7ff;font-weight:700;font-family:serif}.m-p.ex,.m-p.q{color:#fff;font-weight:800;font-size:1.6em}
+@keyframes m-rise{from{opacity:0;transform:translate(0,10px) scale(.6)}20%{opacity:1}to{opacity:0;transform:translate(var(--dx,0),-70px) scale(1.15)}}
+/* bubble */
+.m-bubble{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);max-width:16em;padding:.35em .7em;border-radius:1em;background:rgba(255,255,255,.95);color:#2b3447;font:500 .95em/1.35 var(--m-font);box-shadow:0 4px 14px rgba(20,30,60,.18);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.m-bubble::after{content:'';position:absolute;left:50%;bottom:-6px;width:12px;height:12px;background:inherit;transform:translateX(-50%) rotate(45deg);border-radius:2px}
+.m-bubble.pop{animation:m-pop .25s cubic-bezier(.2,1.4,.4,1)}
+@keyframes m-pop{from{transform:translateX(-50%) scale(.6);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
+.m-shadow{position:absolute;left:50%;bottom:-4px;height:10px;width:60%;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,.45),rgba(0,0,0,0) 70%);transform:translateX(-50%);opacity:.35;display:none}
+.mascot.shadow .m-shadow{display:block}

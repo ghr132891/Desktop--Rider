@@ -73,3 +73,10 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 #lyr-lrc{width:100%;min-height:96px;font:inherit;font-size:11px;line-height:1.5;border:1px solid #e0e6f0;border-radius:6px;padding:6px 8px;resize:vertical;color:#42556e;background:#fbfcfe}
 #module-lyrics .layers-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:11px;color:#66778d}#module-lyrics .layers-row select{flex:1;max-width:62%}
 #module-lyrics details.shape-options{margin-top:12px}
+
+/* 萌版人物 editing mode (its sidebar view open): the mascot takes the pointer, other floats are click-through */
+.desktop.mascot-editing :is(.float-person,#float-outline,.live-copies,.layer-item,.layer-box,.desktop-zone,.desktop-dock,.desktop-top,.split-handle,.split-endpoint,.wallpaper-piece,.note-text,.lyrics-box){pointer-events:none!important}
+.desktop.mascot-editing .mascot{outline:1px dashed rgba(255,255,255,.6);outline-offset:8px;border-radius:6px}
+.mc-try{display:flex;flex-wrap:wrap;gap:6px 12px;margin:4px 0 10px}
+.mc-log{font:11px/1.5 "Cascadia Code",Consolas,monospace;color:#66778d;background:#f5f7fa;border-radius:6px;padding:6px 8px;min-height:2.6em;white-space:pre-wrap;margin:8px 0 0}
+.mc-log:empty{display:none}

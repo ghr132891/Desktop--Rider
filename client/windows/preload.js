@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('desktopRider',{
  applyWallpaper:request=>ipcRenderer.invoke('client:apply',request),
  clearLayer:monitorId=>ipcRenderer.invoke('client:clear-layer',monitorId),
  layers:()=>ipcRenderer.invoke('client:layers'), // [{monitorId, host, attached, rect, file, hwnd}]
+ mascots:()=>ipcRenderer.invoke('client:mascots'), // [{monitorId, hwnd, bounds, onTop, hover}] — 萌版人物 windows
+ mascotApi:()=>ipcRenderer.invoke('client:mascot-api'), // {url, token} for the external-AI HTTP interface (docs/mascot-api.md)
  getSettings:()=>ipcRenderer.invoke('client:get-settings'),
  setSettings:patch=>ipcRenderer.invoke('client:set-settings',patch),
  onStatus:handler=>{const fn=(_,msg)=>handler(msg);ipcRenderer.on('client:status',fn);return()=>ipcRenderer.removeListener('client:status',fn);}

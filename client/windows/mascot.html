@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>Desktop Rider 萌版人物</title>
+<style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#mascot{position:absolute;left:50%;top:100%}</style></head>
+<body><div id="mascot" hidden></div>
+<script>
+// Always-on-top, frameless, transparent window the size of the character (main.js `mascotWindow`). The whole
+// window is click-through except when the pointer is over the character: preload-mascot.js forwards hit-test
+// changes to the main process, which toggles setIgnoreMouseEvents. Dragging the character moves the window itself.
+//   ?cfg=<json {rig, style, phrases}>   from modules/mascot.js exportMascot()   ?lib= / ?css=  the shared renderer files
+const q=new URLSearchParams(location.search),cfg=q.get('cfg')?JSON.parse(q.get('cfg')):null,root=document.getElementById('mascot');
+window.__mascot={ready:false,events:0,last:null,hover:false,state:()=>null};
+if(cfg&&cfg.rig&&q.get('lib')){
+ if(q.get('css')){const link=document.createElement('link');link.rel='stylesheet';link.href=q.get('css');document.head.append(link);}
+ const script=document.createElement('script');script.src=q.get('lib');
+ script.onload=()=>{const view=window.MascotView.create(root);const st={...cfg.style,left:'50%',top:'100%',interactive:true,externalDrag:true};view.setStyle(st);view.setRig(cfg.rig);
+  if(cfg.phrases)view.command({type:'phrases',phrases:cfg.phrases});
+  const bridge=window.mascotBridge;window.__mascot.ready=true;window.__mascot.state=()=>view.state();window.__mascot.command=cmd=>view.command(cmd);
+  view.on(ev=>{window.__mascot.events++;window.__mascot.last=ev;bridge?.event(ev);});
+  bridge?.onCommand(cmd=>{const r=view.command(cmd);return r;});
+  bridge?.onMusic(m=>view.setMusic(m));
+  bridge?.onPaused(p=>{if(p){view.setMusic({playing:false});}});
+  // Hit test: the pointer counts as "on the character" over the head / body boxes or the speech bubble.
+  let hover=null;const over=(x,y)=>{for(const sel of ['.m-headwrap','.m-body','.m-bubble']){const el=root.querySelector(sel);if(!el||el.hidden)continue;const r=el.getBoundingClientRect();if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return true;}return false;};
+  window.addEventListener('mousemove',e=>{const h=over(e.clientX,e.clientY);if(h!==hover){hover=h;window.__mascot.hover=h;bridge?.hover(h);}});
+  window.addEventListener('mouseleave',()=>{if(hover!==false){hover=false;window.__mascot.hover=false;bridge?.hover(false);}});};
+ document.head.append(script);
+}
+</script></body></html>

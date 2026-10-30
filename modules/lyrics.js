@@ -105,7 +105,10 @@ const LyricsModule={
  now(m,lines){if(!lines.length)return 0;const span=lines[lines.length-1].end+3;return (((performance.now()-this.start)/1000)%span)+m.offset;},
  render({s,w,h}){const m=s.modules.lyrics,box=this.box;this.w=w;this.h=h;box.hidden=!m.enabled;if(!m.enabled)return;
   this.cur=m;this.curLines=this.lines(m);this.lv.setStyle(this.viewStyle(m,w,h,false));this.lv.setLines(this.curLines);if(!m.demo)this.lv.render(this.curLines[0]?.t??0,true);},
- tick(){const m=this.cur;if(!m||!m.enabled||!m.demo||this.box.hidden)return;this.lv.render(this.now(m,this.curLines));},
+ tick(){const m=this.cur;if(!m||!m.enabled||!m.demo||this.box.hidden){if(this.wasPlaying){this.wasPlaying=false;Rider.emit('lyrics',{playing:false});}return;}const t=this.now(m,this.curLines);this.lv.render(t);this.wasPlaying=true;Rider.emit('lyrics',this.clock(this.curLines,t));},
+ // What other modules (萌版人物) get every frame: is a song playing, the line, how far into it, how energetic the words come.
+ clock(lines,t){const i=LyricsView.index(lines,t),line=lines[i];if(!line)return {playing:true,line:'',progress:0,energy:.3,t};const n=line.words?line.words.length:Math.max(1,line.text.replace(/\s/g,'').length),span=Math.max(.5,line.end-line.t);
+  return {playing:true,line:line.text,progress:LyricsView.progress(line,t),energy:Math.max(0,Math.min(1,(n/span-1)/5)),t};},
  // ---- export: what shows right now, with the same font, colours, stroke and shadow ----
  draw({ctx,s,w,h}){const m=s.modules.lyrics;if(!m.enabled)return;const lines=this.lines(m),t=this.start&&m.demo?this.now(m,lines):(lines[0]?.t??0),i=Math.max(0,LyricsView.index(lines,t)),line=lines[i];if(!line)return;
   const px=m.size/100*h,x=m.x/100*w,y=m.y/100*h,maxW=m.width/100*w,family=this.family(m),tx=m.align==='left'?x-maxW/2:m.align==='right'?x+maxW/2:x;
