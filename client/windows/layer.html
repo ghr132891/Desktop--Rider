@@ -1,11 +1,28 @@
 <!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><title>Desktop Rider 桌面层</title>
-<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}img{display:block;width:100vw;height:100vh;object-fit:fill;user-select:none;-webkit-user-drag:none}</style></head>
-<body><img id="overlay" alt="">
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas,img{position:fixed;inset:0;display:block;width:100vw;height:100vh;user-select:none;-webkit-user-drag:none}canvas{z-index:1}img{z-index:2;object-fit:fill}</style></head>
+<body><canvas id="live" hidden></canvas><img id="overlay" alt="" hidden>
 <script>
 // Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1).
-// It only shows the overlay PNG the main window rendered: floating person copies and modules
-// drawn above the person. ?img=<file url>&v=<stamp> — the stamp defeats the image cache.
-const q=new URLSearchParams(location.search),img=document.getElementById('overlay');
-if(q.get('img'))img.src=q.get('img')+'#'+(q.get('v')||'');
+//   ?img=<file url>   transparent overlay PNG: floating person copies and modules drawn above the person
+//   ?live=<json>      {video:<file url>, plan:{width,height,gapColor,pieces:[{polygon,x,y,w,h}]}} — the
+//                     video plays clipped to each wallpaper piece, exactly like the still pieces were cut
+//   &v=<stamp>        defeats the image cache
+// With a live plan the page is opaque (gap colour + video); without it only the overlay shows.
+const q=new URLSearchParams(location.search),img=document.getElementById('overlay'),canvas=document.getElementById('live');
+window.__frames=0;
+if(q.get('img')){img.hidden=false;img.src=q.get('img')+'#'+(q.get('v')||'');}
+if(q.get('live')){
+ const {video:src,plan}=JSON.parse(q.get('live'));
+ document.body.style.background=plan.gapColor;canvas.hidden=false;canvas.width=plan.width;canvas.height=plan.height;
+ const video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});window.__video=video;
+ const ctx=canvas.getContext('2d');let last=-1;
+ const draw=()=>{
+  if(video.readyState>=2&&video.currentTime!==last){last=video.currentTime;
+   for(const p of plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(video,p.x,p.y,p.w,p.h);ctx.restore();}
+   window.__frames++;}
+  requestAnimationFrame(draw);};
+ video.addEventListener('error',()=>{document.title='Desktop Rider 桌面层 · 视频无法播放';});
+ video.play().catch(()=>{});requestAnimationFrame(draw);
+}
 </script></body></html>

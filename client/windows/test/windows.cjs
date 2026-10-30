@@ -27,6 +27,8 @@ async function launch(userData){
  return {app,page};
 }
 const rectOf=o=>({left:o.left,top:o.top,width:o.width,height:o.height});
+// The layer window is a BrowserWindow too, so Playwright can ask layer.html whether the video paints.
+async function untilPlaying(app,timeout=30000){const t0=Date.now();let last={frames:0,paused:true};while(Date.now()-t0<timeout){const win=app.windows().find(w=>w.url().includes('layer.html'));if(win){last=await win.evaluate(()=>({frames:window.__frames,paused:!window.__video||window.__video.paused,readyState:window.__video?.readyState,error:window.__video?.error?.code||null})).catch(()=>last);if(last.frames>5&&!last.paused)return last;}await new Promise(r=>setTimeout(r,500));}return last;}
 // Poll from Node: restoreLayers() runs after the page is up (bridge compile + monitors + attach), and
 // Playwright's waitForFunction does not await a promise-returning predicate.
 async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;while(Date.now()-t0<timeout){last=await page.evaluate(fn);if(last)return last;await page.waitForTimeout(500);}throw new Error('timed out waiting for '+what+'; last value '+JSON.stringify(last));}
@@ -79,21 +81,36 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.screenshot({path:path.join(OUT,'2-client-view.png')});
   assert.deepEqual(errors,[],'no page errors');
 
-  // 4. Restart: layers.json brings the layer back on its own, under the host again.
+  // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
+  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
+   rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
+   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},70%,45%)`;ctx.fillRect(0,0,320,200);ctx.fillStyle='#fff';ctx.fillRect((t*5)%300,80,30,30);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
+  await page.waitForFunction(()=>state.modules.live.enabled&&document.querySelectorAll('.live-piece:not([hidden])').length>0,null,{timeout:30000});log('live video imported',{live:await page.evaluate(()=>state.modules.live)});
+  await page.locator('.client-monitor').nth(primary.index).click();
+  await page.waitForFunction(()=>/^(已应用到显示器 \d+（动态壁纸）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
+  const liveStatus=await page.locator('#client-status').textContent();log('live apply status',{status:liveStatus});assert.match(liveStatus,/（动态壁纸）$/);
+  const liveLayers=await page.evaluate(()=>desktopRider.layers());log('live layers',{layers:liveLayers});
+  assert.equal(liveLayers.length,1);assert.equal(liveLayers[0].live,true);assert.equal(liveLayers[0].monitorId,primary.id);
+  const liveInfo=await bridge.layerInfo(liveLayers[0].hwnd);log('live layer window',liveInfo);assert.equal(liveInfo.visible,true);assert.deepEqual(rectOf(liveInfo),rectOf(primary));
+  const playing=await untilPlaying(app);log('live layer playing',playing);assert.ok(playing.frames>5&&!playing.paused,'the layer window decodes and paints frames');
+  await hideMain(app);await page.waitForTimeout(1500);await screenshot('3-live.png');await showMain(app);
+
+  // 5. Restart: layers.json brings the live layer back on its own, under the host again and playing.
   await app.close();app=null;
   ({app,page}=await launch(userData));
   const restored=(await until(page,async()=>{const l=await desktopRider.layers();return l.length===1&&l[0].attached?l:null;},'the restored layer'))[0];log('restored layer',{restored});
-  assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,layer.hwnd,'a new window after restart');
+  assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,liveLayers[0].hwnd,'a new window after restart');assert.equal(restored.live,true);
   const info2=await bridge.layerInfo(restored.hwnd);log('restored layer window',info2);
   assert.equal(info2.valid,true);assert.equal(info2.visible,true);assert.equal(info2.parentClass,restored.host==='workerw'?'WorkerW':'Progman');assert.deepEqual(rectOf(info2),rectOf(primary));
-  assert.equal(await bridge.getWallpaper(primary.id),current,'Windows kept the wallpaper across the restart');
-  await hideMain(app);await page.waitForTimeout(1500);await screenshot('3-restored.png');await showMain(app);
+  const kept=await bridge.getWallpaper(primary.id);assert.ok(kept&&fs.existsSync(kept)&&path.basename(kept).startsWith(path.basename(current).slice(0,12)),'Windows kept our wallpaper across the restart');
+  const playing2=await untilPlaying(app);log('restored layer playing',playing2);assert.ok(playing2.frames>5&&!playing2.paused,'the restored layer plays');
+  await hideMain(app);await page.waitForTimeout(1500);await screenshot('4-restored.png');await showMain(app);
 
-  // 5. Clearing destroys the window; Win32 no longer knows the handle.
+  // 6. Clearing destroys the window; Win32 no longer knows the handle.
   await page.evaluate(id=>desktopRider.clearLayer(id),primary.id);
   assert.deepEqual(await page.evaluate(()=>desktopRider.layers()),[]);
   const gone=await bridge.layerInfo(restored.hwnd);log('after clear',gone);assert.equal(gone.valid,false);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData,'desktop','layers.json'),'utf8')),[]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData,"desktop","layers.json"),"utf8")),[]);
   report.result='pass';
  }catch(error){
   report.result='fail';report.error=error.stack||String(error);await screenshot('failure.png');

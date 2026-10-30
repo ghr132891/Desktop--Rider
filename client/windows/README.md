@@ -4,7 +4,8 @@
 
 1. **一键设为系统壁纸**：按每台显示器的真实分辨率渲染当前设计，分别设置（`IDesktopWallpaper`，Windows 8 以上的多显示器壁纸接口）。
 2. **桌面层**：悬浮人物的各份副本、桌面文字等"画在人物之上"的模块，渲染成一张透明 PNG，由一个透明、点击穿透的窗口显示，并挂到 Explorer 的壁纸宿主窗口下——在壁纸之上、桌面图标之下（Wallpaper Engine / Lively 的 WorkerW 方案）。
-3. **托盘与开机启动**：关闭窗口即隐藏到托盘；开机启动用 `--hidden` 静默拉起并恢复上次的桌面层。
+3. **动态壁纸**：网页侧 `modules/live.js` 导入的视频连同按显示器分辨率算好的分区几何一起发给客户端，桌面层窗口用 canvas 按同样的多边形裁切实时播放（间隙颜色一起画出），悬浮人物与桌面文字叠在其上；系统壁纸设为视频静帧，客户端不运行时桌面仍有图。重启后从 `layers.json` 恢复并继续播放。
+4. **托盘与开机启动**：关闭窗口即隐藏到托盘；开机启动用 `--hidden` 静默拉起并恢复上次的桌面层。
 
 目标系统：Windows 11（先行适配），Windows 10 1703 以上也应可用（同一套 API）。本客户端在 macOS 上编写；系统相关的部分由 GitHub Actions 在真实 Windows 上验证（见「验证」）：Windows Server 2025（Windows 11 24H2 内核）走 Progman 分支、Windows Server 2022（Windows 10 内核）走 WorkerW 分支，两者都确认了按显示器设壁纸、桌面层窗口成为壁纸宿主的子窗口并铺满显示器、重启恢复与清理。Win11 客户端版的托盘、开机启动等交互仍建议真机过一遍。
 
@@ -37,11 +38,12 @@ npm run dist
 | `lib/server.js` | 回环静态服务器，只服务网页根目录，拒绝越界路径 |
 | `lib/native.js` | 调起 `native/bridge.ps1` 并解析 JSON；参数全部作为 PowerShell 参数传递，不拼接字符串 |
 | `native/bridge.ps1` | Windows PowerShell 5.1 脚本，`Add-Type` 内嵌 C#：`IDesktopWallpaper`（枚举显示器、设壁纸）、`EnumDisplaySettings`（物理分辨率与位置，不受 DPI 虚拟化影响）、WorkerW 查找、`SetParent` / `SetWindowPos`、线程级每显示器 DPI 感知 |
-| `layer.html` | 桌面层窗口页面：透明背景 + 一张铺满的 PNG |
+| `layer.html` | 桌面层窗口页面：`?img=` 透明叠加 PNG；`?live=` 时按几何方案用 canvas 播放视频（不透明，含间隙颜色） |
+| `lib/live.js` | 校验网页侧发来的动态壁纸数据（视频字节、容器类型、每块分区的多边形与目标矩形） |
 | `../../modules/client.js` | 网页侧模块，只有在 `window.desktopRider` 存在时注册 |
 | `test/lib.test.cjs` | 单元测试（任何系统）：参数构造、句柄转换、JSON 解析、静态服务器 |
 | `test/smoke.cjs` | 用 Playwright 启动真实 Electron：页面加载、桥存在、显示器列表、非 Windows 下应用失败并提示 |
-| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形，重启恢复、清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
+| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
@@ -51,7 +53,7 @@ npm run dist
 
 - 应用时向 `Progman` 发送 `0x052C`，Explorer 会在壁纸与图标之间生成一个 `WorkerW`，桌面层窗口 `SetParent` 到它上面；Windows 11 24H2 把图标视图留在 `Progman` 内，此时直接挂到 `Progman` 并置于其 z 序底部。两种情况 `bridge.ps1` 都会返回实际使用的宿主（`workerw` / `progman`）。
 - 桌面层窗口是 Electron 透明窗口，`setIgnoreMouseEvents(true)`，不在任务栏与 Alt-Tab 出现；坐标按物理像素相对虚拟屏幕原点定位，多显示器、不同缩放比例都按 `IDesktopWallpaper` 返回的矩形处理。
-- 桌面层是静态图片，不随壁纸切换、分辨率变化自动重绘；重新点一次「应用」即可。Explorer 重启（例如资源管理器崩溃）后宿主窗口失效，需要重新应用。
+- 桌面层（静态叠加或动态视频）不随分辨率变化自动重算；重新点一次「应用」即可。视频按 `requestAnimationFrame` 逐帧画到 canvas，主进程加了 `disable-renderer-backgrounding`、`disable-background-timer-throttling` 与 `CalculateNativeWinOcclusion` 关闭，避免 Chromium 把图标后面的窗口当作被遮挡而停止绘制。视频文件写在 `%APPDATA%/desktop-rider-windows/desktop/`，每台显示器只保留最新一份。Explorer 重启（例如资源管理器崩溃）后宿主窗口失效，需要重新应用。
 - 系统壁纸由 Windows 自行持久化；客户端重启只恢复桌面层窗口（读取 `%APPDATA%/desktop-rider-windows/desktop/layers.json`）。
 - 不修改注册表以外的系统设置；开机启动使用 Electron 的登录项接口（`HKCU\...\Run`）。
 - `SetParent` 失败时桥脚本会带 Win32 错误码报错，而不是静默继续。以管理员身份运行并不影响：CI 任务本身就是高完整性进程（`elevated=True`，与资源管理器同一会话），桌面层照样挂到了 WorkerW / Progman 之下。

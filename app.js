@@ -396,7 +396,7 @@ function chooseWe(btn,option){
 $('#we-video-time').addEventListener('input',e=>{const video=$('#we-video');if(Number.isFinite(video.duration))video.currentTime=video.duration*e.target.value/1000;});
 $('#we-apply').addEventListener('click',async()=>{
  if(!weChoice)return;const button=$('#we-apply');button.disabled=true;
- try{if(weChoice.kind==='video'){const video=$('#we-video');if(video.readyState<2)await new Promise((resolve,reject)=>{video.addEventListener('loadeddata',resolve,{once:true});video.addEventListener('error',()=>reject(new Error('视频无法解码')),{once:true});});if(video.seeking)await new Promise(resolve=>video.addEventListener('seeked',resolve,{once:true}));useImage(video,video.videoWidth,video.videoHeight,weItem.title);}
+ try{if(weChoice.kind==='video'){const video=$('#we-video');if(video.readyState<2)await new Promise((resolve,reject)=>{video.addEventListener('loadeddata',resolve,{once:true});video.addEventListener('error',()=>reject(new Error('视频无法解码')),{once:true});});if(video.seeking)await new Promise(resolve=>video.addEventListener('seeked',resolve,{once:true}));useImage(video,video.videoWidth,video.videoHeight,weItem.title);Rider.emit('video',{file:weChoice.file,time:video.currentTime,name:weItem.title});} // modules/live.js keeps the video playing
   else if(weChoice.kind==='compose'){$('#we-status').textContent='正在合成图层…';const picture=await WallpaperEngine.composeScene(weItem);if(!picture)throw new Error('图层合成失败，可改选单个图层');const bitmap=await createImageBitmap(picture.blob);useImage(bitmap,bitmap.width,bitmap.height,weItem.title);bitmap.close();}
   else{const bitmap=await createImageBitmap(weChoice.blob);useImage(bitmap,bitmap.width,bitmap.height,weItem.title);bitmap.close();}
   $('#we-dialog').close();
@@ -406,7 +406,7 @@ new ResizeObserver(()=>scheduleRender()).observe($('#desktop'));
 function updateClock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});$('.desktop-top>span:last-child').firstChild.textContent=now.toLocaleDateString('zh-CN',{weekday:'short',month:'long',day:'numeric'})+' ';Rider.emit('tick',now);}
 updateClock();setInterval(updateClock,60000);
 // Modules (core.js): what a module may use of the app. Getters read live values.
-Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
+Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,wallpaperPlacement,useImage,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
 let booted=false;
 function mountModule(mod){
  mod.panel=document.createElement('div');mod.panel.className='module-panel';mod.panel.id='module-'+mod.id;mod.panel.hidden=true;$('#module-controls').append(mod.panel);

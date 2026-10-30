@@ -29,6 +29,7 @@ python3 tools/serve.py
 - 「隐藏桌面，只看壁纸」：页脚按钮、点一下任意分区标题或双击空白壁纸，分区、Dock、顶栏、问候语、壁纸名一起飞出画面（顶栏向上、Dock 向下、分区飞向各自较近的边），只留壁纸与悬浮人物；像 macOS 一样点一下壁纸就全部回来。
 - 全屏预览、窄屏布局、键盘焦点、减少动态效果偏好。
 - 模块机制（`core.js`）：桌面歌词、文件管理、时钟这类后续功能各写成 `modules/` 下的一个文件，通过 `Rider.register` 接入自己的状态切片（随草稿、方案、重置一起处理）、侧栏视图、设置面板、桌面图层和导出绘制；模块出错只记录日志，不影响核心。`modules/note.js`「桌面文字」是示例：一行文字可拖动、缩放、换色，随方案保存并画进导出 PNG。接口说明见 `docs/modules.md`。
+- 动态壁纸（`modules/live.js`）：导入 MP4 / WebM 视频（最大 500 MB），或在 Wallpaper Engine 导入里选视频壁纸；取一帧作为静态壁纸，照常参与分裂、人物识别、人物悬浮与 PNG 导出，预览里视频则在两块分区上实时播放，裁切与定位与静帧完全一致。可切换播放 / 静帧、重新取帧；「减少动态效果」或人物优先模式下自动退回静帧。视频保存在本浏览器的 IndexedDB，方案只记录开关与取帧位置。在 Windows 客户端里应用后，桌面层窗口按同一几何实时播放视频（间隙颜色一起画出，悬浮人物与桌面文字叠在其上），系统壁纸设为静帧作为客户端未运行时的兜底。
 
 ## 当前边界
 
@@ -42,11 +43,12 @@ python3 tools/serve.py
 - 已评估并放弃的方案：浏览器端 MI-GAN（28 MB ONNX）补全在小洞上能接出岸线，但在插画和大面积人物上会凭空生成柱子、墙面，整体不如现有方法；SlimSAM 点选分割（40 MB）对单点只取局部、多点仍漏掉头部，不比 MagicTouch 稳定。两者都没有进入仓库。
 - 自动找人用的是人像分割模型，只认实拍或接近实拍的人物：插画、背影、线稿常常自动找不到，此时会直接打开「选择要悬浮的人物」，点一下人物即可，后续效果与自动识别相同。识别面积不足画面 1% 时同样视为没找到，避免把荷叶、拱门这类小块误当成人。人物悬浮只存在于预览和导出图中，不会成为系统桌面上的独立窗口。
 - Wallpaper Engine 场景的「合成画面」只按位置、缩放、旋转和透明度把图片图层静态叠起来，不还原粒子、着色器特效、文字、脚本与音频；只有一个图片图层的场景直接给出该图层。支持内嵌 PNG / JPEG、原始 RGBA（含 LZ4）与 DXT1 / DXT3 / DXT5 纹理，RG88 / R8 这类遮罩通道会跳过。导入的画面压缩到最长边 2000px 存入浏览器。
+- 动态壁纸的预览与桌面播放是把视频按分区几何裁切后原样播放：导出的 PNG 仍是静帧；人物悬浮时视频里的人物留在原位（效果等同「保留原位人物」），人物优先模式无法作用于运动画面。视频不进方案，换浏览器或清除站点数据后需要重新导入。
 - 多显示器壁纸、开机启动由 Windows 客户端提供（见下）；网页原型本身仍是单画面预览。系统窗口吸附与桌面图标接管尚未实现。
 
 ## Windows 客户端
 
-`client/windows/` 是 Electron 客户端（先适配 Windows 11，Windows 10 待实测），把网页原样装进去并加上系统能力：按每台显示器真实分辨率渲染并设为系统壁纸（`IDesktopWallpaper`，多显示器分别设置）；悬浮人物与桌面文字渲染成透明 PNG，由点击穿透的桌面层窗口显示在壁纸之上、图标之下（WorkerW / Progman 挂载）；托盘运行、开机启动并恢复桌面层。网页侧通过 `modules/client.js` 接入，只有在客户端内（存在 `window.desktopRider`）才出现「应用到桌面」视图。运行与打包、结构与边界见 `client/windows/README.md`。本仓库在 macOS 上开发；系统相关部分由 GitHub Actions 的 "Windows client" 工作流在真实 Windows 上验证（`windows-2025` 为 Windows 11 24H2 内核、`windows-2022` 为 Windows 10 内核），已确认按显示器设壁纸、桌面层挂到 WorkerW / Progman 之下并铺满显示器、重启恢复与清理，并产出 x64 安装包。托盘与开机启动的实际交互仍建议在 Win11 真机过一遍。
+`client/windows/` 是 Electron 客户端（先适配 Windows 11，Windows 10 待实测），把网页原样装进去并加上系统能力：按每台显示器真实分辨率渲染并设为系统壁纸（`IDesktopWallpaper`，多显示器分别设置）；悬浮人物与桌面文字渲染成透明 PNG，由点击穿透的桌面层窗口显示在壁纸之上、图标之下（WorkerW / Progman 挂载）；动态壁纸时同一个桌面层窗口按分区几何实时播放视频，再叠上述透明层；托盘运行、开机启动并恢复桌面层。网页侧通过 `modules/client.js` 接入，只有在客户端内（存在 `window.desktopRider`）才出现「应用到桌面」视图。运行与打包、结构与边界见 `client/windows/README.md`。本仓库在 macOS 上开发；系统相关部分由 GitHub Actions 的 "Windows client" 工作流在真实 Windows 上验证（`windows-2025` 为 Windows 11 24H2 内核、`windows-2022` 为 Windows 10 内核），已确认按显示器设壁纸、桌面层挂到 WorkerW / Progman 之下并铺满显示器、重启恢复与清理，并产出 x64 安装包。托盘与开机启动的实际交互仍建议在 Win11 真机过一遍。
 
 真实文件整理仍未实现，应优先使用快捷方式并保留可撤销记录。
 
@@ -56,6 +58,7 @@ python3 tools/serve.py
 - `styles.css`：工作台样式与响应式布局。
 - `core.js`：模块注册表、状态切片校验、事件与模块私有存储。
 - `modules/note.js`：示例模块「桌面文字」，也是新模块的模板。
+- `modules/live.js`：动态壁纸模块（视频导入、静帧捕获、分区画布播放、给客户端的播放方案）。
 - `modules/client.js`：Windows 客户端内的「应用到桌面」模块（仅在客户端中注册）。
 - `client/windows/`：Electron 客户端（主进程、预加载桥、PowerShell 原生桥、桌面层页面、测试）。
 - `app.js`：裁切几何、壁纸渲染、交互、导入导出、本地存储；启动时挂载模块并提供 `Rider.api`。
@@ -86,6 +89,8 @@ python3 tools/serve.py
 人物悬浮与 Wallpaper Engine 导入回归：`node tools/verify-float.cjs`。覆盖自动抠图、背景补全、拖动 / 滚轮 / 键盘、导出位置、刷新恢复、点选添加 / 去除，以及用测试生成的 scene.pkg（内嵌 PNG、LZ4 原始 RGBA 与 DXT5 纹理，另含 DXT1 四色 / 三色块的逐像素校验）验证文件夹扫描和图层解码。
 
 客户端模块回归：`node tools/verify-client.cjs`，用假的 `window.desktopRider` 验证显示器列表、按显示器分辨率渲染、背景 / 叠加层拆分与导出逐像素一致、设置与桌面层清理。客户端自身：`cd client/windows && npm test && npm run smoke`；Windows 上再跑 `node test/windows.cjs`（真调用桥脚本并回查系统）。没有 Windows 机器时由 GitHub Actions 的 "Windows client" 工作流（`.github/workflows/windows.yml`）在 `windows-2025` / `windows-2022` 运行器上完成这三项并上传桌面截图与 x64 安装包。
+
+动态壁纸回归：`node tools/verify-live.cjs`，在页面内录一段 WebM 经文件选择器导入，检查静帧成为壁纸、两块画布与分区的裁切与定位逐项一致、帧持续推进、开关 / 人物优先 / 减少动态效果的退回规则、给客户端的几何方案、刷新后从 IndexedDB 恢复与移除。
 
 模块机制回归：`node tools/verify-modules.cjs`。覆盖示例模块的视图、控件、拖动、键盘、导出像素与持久化，状态校验，运行中注册模块与绘制顺序，处处抛错的模块不影响核心，以及事件、`api`、`storage`。
 

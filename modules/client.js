@@ -39,10 +39,12 @@ if(window.desktopRider)Rider.register({
  },
  // Overlay only when something is drawn on it: sample the alpha channel on a coarse grid.
  hasPixels(canvas){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;for(let i=3;i<d.length;i+=4*7)if(d[i])return true;return false;},
+ // Live wallpaper (modules/live.js): the video plus where each piece goes on this monitor; null when not playing.
  async renderFor(m){const api=this.api,s={...api.clone(api.state),aspect:m.width/m.height};const background=await api.wallpaperCanvas(s,m.width,{layers:'background'}),overlay=await api.wallpaperCanvas(s,m.width,{layers:'overlay'});
-  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null};},
+  const liveModule=Rider.modules.find(x=>x.id==='live'),live=liveModule&&typeof liveModule.exportFor==='function'?await liveModule.exportFor(s,m.width,m.height):null;
+  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null,live};},
  async apply(m){if(this.busy)return;this.busy=true;this.$('#client-monitors').classList.add('busy');
-  try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
+  try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.live?'（动态壁纸）':result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
   catch(error){const why=this.reason(error);this.say('应用失败：'+why);this.api.toast('应用失败：'+why);}
   finally{this.busy=false;this.$('#client-monitors').classList.remove('busy');}},
  async applyAll(){for(const m of this.monitors)await this.apply(m);}

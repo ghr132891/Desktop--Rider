@@ -52,19 +52,24 @@ Rider.register({
 | `wallpaperCanvas(s,width)` | 生成导出画布 |
 | `loadImage(src)`、`source()`、`scene(s)` | 壁纸图片、当前壁纸地址、含抠图的场景 |
 | `geometry(s,w,h)`、`floating(s)` | 分裂几何、人物是否悬浮 |
+| `wallpaperPlacement(s,img,w,h,polygon,index)` | 某块分区里壁纸的目标矩形 `{x,y,w,h}`；`img` 只需 `naturalWidth / naturalHeight`，视频也可用 |
+| `useImage(drawable,width,height,name)` | 把任意可绘制对象（图片、位图、视频帧）设为自定义壁纸，与导入图片走同一路径 |
 | `scheduleRender()` / `renderDesktop()` | 重绘预览（模块自身计时器驱动的内容可直接改图层 DOM，不必走这里） |
 | `createItem(name,kind)`、`moveItem(id,zoneId)` | 收纳分区中的快捷项；`kind` 为 file / folder / image / code / music |
 | `download(blob,name)`、`icon(name)`、`clone`、`$`、`$$`、`desktop()`、`persist()`、`normalizeState` | 工具 |
 
-事件：`Rider.on(event,fn)` 返回取消函数；`state`（update 之后，参数为 state）、`render`（桌面渲染完成，`{s,w,h}`）、`view`（视图切换）、`tick`（每分钟，桌面时钟刷新时）。模块也可以 `Rider.emit` 自定义事件给其他模块。
+事件：`Rider.on(event,fn)` 返回取消函数；`state`（update 之后，参数为 state）、`render`（桌面渲染完成，`{s,w,h}`；此时 `#piece-left / #piece-right` 的裁切与定位已写好，需要跟随壁纸分区的图层在这里同步）、`view`（视图切换）、`tick`（每分钟，桌面时钟刷新时）、`video`（Wallpaper Engine 导入了视频壁纸，`{file,time,name}`，由 `modules/live.js` 接收）。模块也可以 `Rider.emit` 自定义事件给其他模块。
 
 ## 后续功能的落点
 
 - **桌面歌词**：从 `note.js` 复制，`order` 保持 200；状态存样式与位置，歌词文本不存方案。播放源（本地音频元素、系统播放器接口）在 `mount` 里建立，用自己的计时器更新 `layer` 里的文字；`draw` 画当前行以便导出截图。真正读取系统正在播放的曲目需要原生客户端提供接口，模块里预留一个 `source` 适配器即可。
 - **文件管理**：声明 `view:{page:true}`，`page` 放目录浏览，`panel` 放筛选与整理选项；目录句柄与索引放 `Rider.storage('files')`，真实文件不进方案；通过 `api.createItem` / `api.moveItem` 把文件映射为分区里的快捷项。浏览器内只能读取用户选择的目录（`showDirectoryPicker`），移动、删除文件要等原生客户端。
 - **时钟 / 天气 / 便签**：与桌面文字同构，各自一个模块文件。
+- **跟随壁纸分区的图层**（参考 `modules/live.js` 动态壁纸）：`order < 100`，监听 `render` 事件后读取 `#piece-left / #piece-right` 的 `clipPath`、`backgroundSize`、`backgroundPosition`，让自己的画布与分区逐像素对齐；大文件放 IndexedDB，方案里只存元数据；给客户端提供 `exportFor(s,w,h)` 之类的方法（不要用保留钩子名）返回按显示器分辨率算好的几何。
 - **原生客户端**：把 `Rider.api` 之外的系统能力（设壁纸、枚举显示器、监听播放器）做成单独的模块或 `api` 扩展，界面层无需改动。
 
 ## 验证
+
+`node tools/verify-live.cjs`：动态壁纸模块（视频导入、静帧、分区画布对齐、播放规则、客户端方案、持久化）。
 
 `node tools/verify-modules.cjs`：示例模块的视图、控件、拖动、键盘、导出像素、草稿与方案持久化、状态校验，运行中注册新模块与绘制顺序，处处抛错的模块不影响核心，事件、`api`、`storage` 与窄屏布局。

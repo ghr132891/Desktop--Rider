@@ -9,7 +9,7 @@ const assert=require('node:assert/strict');
  const ready=()=>page.locator('#piece-left').evaluate(el=>new Promise(resolve=>{const check=()=>el.style.backgroundImage?resolve():requestAnimationFrame(check);check();}));
  await page.goto('http://127.0.0.1:4173');await ready();
  // Registration, nav entry, own view with the preview still visible.
- assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['note']);
+ assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['live','note']);
  assert.equal(await page.locator('nav [data-view="note"]').count(),1);
  await page.locator('[data-view="note"]').click();
  assert(await page.locator('#module-note').isVisible());assert(await page.locator('#design-controls').isHidden());assert(await page.locator('#editor-view').isVisible());assert(await page.locator('#presets-section').isHidden());
@@ -35,10 +35,10 @@ const assert=require('node:assert/strict');
  await page.locator('#reset').click();assert.equal(await page.evaluate(()=>state.modules.note.text),'');await page.waitForFunction(()=>document.querySelector('.note-text').hidden);
  await page.locator('[data-view="saved"]').click();await page.getByRole('button',{name:'载入方案',exact:true}).click();assert.equal(await page.evaluate(()=>state.modules.note.text),'桌面歌词示例');assert.equal(await page.evaluate(()=>state.modules.note.size),8);
  // Sanitising: wrong types fall back, ranges clamp, unknown slices survive.
- assert.deepEqual(await page.evaluate(()=>normalizeState({...state,modules:{note:{text:123,x:999,y:-4,size:'a',color:'red'},future:{keep:1}}}).modules),{note:{text:'',x:100,y:0,size:4,color:'#ffffff',shadow:true},future:{keep:1}});
+ assert.deepEqual(await page.evaluate(()=>normalizeState({...state,modules:{note:{text:123,x:999,y:-4,size:'a',color:'red'},future:{keep:1}}}).modules),{live:{enabled:false,name:'',type:'',size:0,width:0,height:0,duration:0,time:0},note:{text:'',x:100,y:0,size:4,color:'#ffffff',shadow:true},future:{keep:1}});
  // Late registration: mounted at once, below the person (order < 100), drawn under later modules.
  await page.evaluate(()=>{Rider.register({id:'probe',order:50,defaults:{on:true},mount({layer}){layer.dataset.mounted='1';},render({layer,s}){layer.dataset.ran=String(s.modules.probe.on);},draw({ctx,w,h}){ctx.fillStyle='#ff00ff';ctx.fillRect(0,0,w,h*.1);}});});
- assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['probe','note']);
+ assert.deepEqual(await page.evaluate(()=>Rider.modules.map(m=>m.id)),['live','probe','note']);
  await page.waitForFunction(()=>document.querySelector('[data-module="probe"]')?.dataset.ran==='true');
  assert.equal(await page.locator('[data-module="probe"]').evaluate(el=>[el.dataset.mounted,el.style.zIndex].join()),'1,2');
  assert.equal(await page.locator('[data-module="note"]').evaluate(el=>el.style.zIndex),'18','modules above the person clear all twelve copies');

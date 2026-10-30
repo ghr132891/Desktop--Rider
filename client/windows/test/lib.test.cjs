@@ -40,3 +40,17 @@ test('static server serves the web root only',async()=>{
   assert.equal(server.resolveFile(root,'/'),path.join(root,'index.html'));
  }finally{await s.close();}
 });
+test('live wallpaper payload is validated before anything is written',()=>{
+ const {checkLive}=require('../lib/live');
+ const plan={width:1920,height:1080,gapColor:'#e9eff4',pieces:[{polygon:[[0,0],[1100,0],[900,1080],[0,1080]],x:-10,y:0,w:1940,h:1091},{polygon:[[1120,0],[1920,0],[1920,1080],[920,1080]],x:0,y:0,w:1920,h:1080}]};
+ const ok=checkLive({type:'video/webm',bytes:new Uint8Array([1,2,3]).buffer,plan});
+ assert.equal(ok.ext,'webm');assert.deepEqual([...ok.bytes],[1,2,3]);assert.deepEqual(ok.plan,plan);assert.notEqual(ok.plan.pieces,plan.pieces,'copied, not aliased');
+ assert.equal(checkLive({type:'video/x-matroska',bytes:Buffer.from([1]),plan}).ext,'mp4','unknown container falls back to mp4');
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:new ArrayBuffer(0),plan}),/缺少视频/);
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,gapColor:'red'}}),/间隙颜色/);
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,pieces:[]}}),/分块/);
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,pieces:[{polygon:[[0,0],[1,0]],x:0,y:0,w:1,h:1}]}}),/分块/);
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,pieces:[{polygon:[[0,0],[1,0],[1,1]],x:0,y:0,w:0,h:1}]}}),/分块/);
+ assert.throws(()=>checkLive({type:'video/mp4',bytes:Buffer.from([1]),plan:{...plan,width:1.5}}),/几何/);
+ assert.throws(()=>checkLive(null),/无效/);
+});
