@@ -12,7 +12,7 @@ if(window.desktopRider)Rider.register({
   panel.innerHTML=`<p class="inspector-description">Desktop Rider 客户端 <span id="client-version"></span> · 点击某台显示器，当前设计会按它的分辨率渲染并应用。</p>
 <div id="client-monitors" class="client-monitors"></div>
 <button class="button primary full-width" id="client-apply-all">应用到所有显示器</button>
-<div class="switch-row"><div><label for="client-autostart">开机启动</label><small>登录后在托盘运行，并恢复桌面层</small></div><input type="checkbox" id="client-autostart" class="switch"></div>
+<div class="switch-row"><div><label for="client-autostart">开机启动</label><small>登录后在托盘运行，并恢复桌面层</small></div><input type="checkbox" id="client-autostart" class="switch"></div><div class="switch-row"><div><label for="client-powersave">节能暂停</label><small>桌面被全屏 / 最大化窗口遮住或用电池时暂停桌面层视频，锁屏始终暂停</small></div><input type="checkbox" id="client-powersave" class="switch" checked></div>
 <p id="client-status" class="field-hint" role="status" aria-live="polite"></p>
 <button class="text-button" id="client-refresh"><svg><use href="#i-reset"/></svg>刷新显示器列表</button> <button class="text-button" id="client-clear">移除全部桌面层</button>`;
   const $=q=>panel.querySelector(q);this.$=$;
@@ -22,7 +22,8 @@ if(window.desktopRider)Rider.register({
   $('#client-clear').addEventListener('click',async()=>{for(const m of this.monitors)await desktopRider.clearLayer(m.id).catch(()=>{});this.say('已移除全部桌面层');});
   $('#client-autostart').addEventListener('change',async e=>{try{await desktopRider.setSettings({openAtLogin:e.target.checked});this.say(e.target.checked?'已设置开机启动':'已取消开机启动');}catch(error){this.say('设置失败：'+this.reason(error));}});
   desktopRider.onStatus(msg=>this.say(msg));
-  desktopRider.getSettings().then(s=>{$('#client-autostart').checked=!!s.openAtLogin;}).catch(()=>{});
+  $('#client-powersave').addEventListener('change',async e=>{try{await desktopRider.setSettings({powerSave:e.target.checked});this.say(e.target.checked?'已开启节能暂停':'已关闭节能暂停');}catch(error){this.say('设置失败：'+this.reason(error));}});
+  desktopRider.getSettings().then(s=>{$('#client-autostart').checked=!!s.openAtLogin;$('#client-powersave').checked=s.powerSave!==false;}).catch(()=>{});
   this.refresh();
  },
  say(text){this.$('#client-status').textContent=text;},

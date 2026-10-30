@@ -67,3 +67,25 @@ test('video layer payload is validated before anything is written',()=>{
  assert.throws(()=>checkClips(Array.from({length:7},()=>clip)),/最多/);
  assert.throws(()=>checkClips('x'),/无效/);
 });
+
+test('power policy: lock and suspend always pause, cover and battery only with power saving on',()=>{
+ const {decide}=require('../lib/power');
+ assert.deepEqual(decide({}),{paused:false,reason:'',reasons:[]});
+ assert.equal(decide({covered:true}).reason,'covered');assert.equal(decide({onBattery:true}).reason,'battery');
+ assert.deepEqual(decide({covered:true,onBattery:true,powerSave:false}),{paused:false,reason:'',reasons:[]});
+ assert.equal(decide({locked:true,powerSave:false}).reason,'locked');assert.equal(decide({suspended:true,covered:true}).reason,'suspended');
+ assert.deepEqual(decide({locked:true,covered:true,onBattery:true}).reasons,['locked','covered','battery']);
+});
+test('covering watcher: bridge arguments and line parsing',()=>{
+ const native=require('../lib/native');
+ const list=native.args('watch',{hwnd:42,left:0,top:0,width:1024,height:768});
+ assert.deepEqual(list.slice(-12),['-Command','watch','-Hwnd','42','-Left','0','-Top','0','-Width','1024','-Height','768']);
+ const seen=[];const feed=native.lineReader(l=>seen.push(l));feed('{"covered":false}\n{"cov');feed('ered":true,"class":"Chrome_WidgetWin_1"}\r\n\n');
+ assert.deepEqual(seen,['{"covered":false}','{"covered":true,"class":"Chrome_WidgetWin_1"}']);
+ const states=[];const {EventEmitter}=require('node:events');let killed=false;
+ const child=Object.assign(new EventEmitter(),{stdout:new EventEmitter(),stderr:new EventEmitter(),kill(){killed=true;}});
+ const api=native.create({platform:'win32',spawner:()=>child});const w=api.watchCovering(7,{left:0,top:0,width:10,height:10},s=>states.push(s));
+ child.stdout.emit('data','{"covered":true,"zoomed":true}\nnot json\n{"covered":false}\n');w.stop();
+ assert.deepEqual(states,[{covered:true,zoomed:true},{covered:false}]);assert.equal(killed,true);
+ assert.deepEqual(native.create({platform:'darwin'}).watchCovering(1,{left:0,top:0,width:1,height:1},()=>{}).stop(),undefined);
+});

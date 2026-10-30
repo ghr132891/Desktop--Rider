@@ -5,11 +5,13 @@
 #   bridge.ps1 -Command detach-layer -Hwnd <n>
 #   bridge.ps1 -Command get-wallpaper -MonitorId <id>      (verification: current wallpaper file)
 #   bridge.ps1 -Command layer-info -Hwnd <n>               (verification: parent class, visibility, screen rect)
+#   bridge.ps1 -Command covering -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>   (is the desktop on this monitor hidden by a window?)
+#   bridge.ps1 -Command watch -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>      (same, one JSON line per change, every second, until killed)
 # Prints one JSON document on stdout; any failure goes to stderr with exit code 1.
 # Needs only Windows PowerShell 5.1 (present on every Win10/11) — the C# below is
 # compiled in memory by Add-Type, no SDK required.
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info')][string]$Command,
+  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info','covering','watch')][string]$Command,
   [string]$MonitorId,[string]$Path,[long]$Hwnd=0,[int]$Left=0,[int]$Top=0,[int]$Width=0,[int]$Height=0
 )
 $ErrorActionPreference='Stop'
@@ -58,6 +60,12 @@ namespace DesktopRider {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+    delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr lParam);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
     static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
     const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
     // powershell.exe is system-DPI-aware by manifest, so the process context cannot be changed any
@@ -109,6 +117,25 @@ namespace DesktopRider {
     }
     public static void Detach(long hwnd) { IntPtr h = new IntPtr(hwnd); if (IsWindow(h)) { ShowWindow(h, 0); SetParent(h, IntPtr.Zero); } }
     public static string GetWallpaper(string id) { var w = (IDesktopWallpaper)new DesktopWallpaperClass(); return w.GetWallpaper(id) ?? ""; }
+    // Is the desktop of the monitor (L,T,W,H) hidden? True when some visible, non-minimised, non-cloaked top-level
+    // window that is not the shell, not click-through (WS_EX_TRANSPARENT overlays) and not `exclude` is maximised on
+    // that monitor or spans it entirely. Returns "hwnd|class|zoomed|left|top|right|bottom" of that window, else "".
+    public static string Covering(long exclude, int L, int T, int W, int H) {
+      string found = "";
+      EnumWindows((h, l) => {
+        if (h.ToInt64() == exclude || !IsWindowVisible(h) || IsIconic(h)) return true;
+        int cloaked = 0; try { DwmGetWindowAttribute(h, 14, out cloaked, 4); } catch { } if (cloaked != 0) return true;
+        long ex = GetWindowLongPtr(h, -20).ToInt64(); if ((ex & 0x20) != 0) return true;
+        var name = new System.Text.StringBuilder(256); GetClassName(h, name, 256); string cls = name.ToString();
+        if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd" || cls == "Windows.UI.Core.CoreWindow" || cls == "XamlExplorerHostIslandWindow") return true;
+        RECT rc; GetWindowRect(h, out rc); if (rc.Right - rc.Left < 2 || rc.Bottom - rc.Top < 2) return true;
+        bool onMonitor = rc.Left < L + W && rc.Right > L && rc.Top < T + H && rc.Bottom > T;
+        bool contains = rc.Left <= L && rc.Top <= T && rc.Right >= L + W && rc.Bottom >= T + H;
+        bool zoomed = IsZoomed(h);
+        if ((zoomed && onMonitor) || contains) { found = h.ToInt64() + "|" + cls + "|" + (zoomed ? 1 : 0) + "|" + rc.Left + "|" + rc.Top + "|" + rc.Right + "|" + rc.Bottom; return false; }
+        return true; }, IntPtr.Zero);
+      return found;
+    }
     // "parentClass|visible|left|top|right|bottom" in physical screen pixels, or "" when the handle is gone.
     public static string LayerInfo(long hwnd) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) return "";
@@ -121,6 +148,12 @@ namespace DesktopRider {
 }
 '@
 [DesktopRider.Api]::DpiAware()
+function Get-Covering { param([long]$Exclude,[int]$L,[int]$T,[int]$W,[int]$H)
+  $info = [DesktopRider.Api]::Covering($Exclude, $L, $T, $W, $H)
+  if (-not $info) { return [ordered]@{ covered=$false } }
+  $p = $info.Split('|')
+  return [ordered]@{ covered=$true; hwnd=[long]$p[0]; class=$p[1]; zoomed=($p[2] -eq '1'); left=[int]$p[3]; top=[int]$p[4]; width=([int]$p[5]-[int]$p[3]); height=([int]$p[6]-[int]$p[4]) }
+}
 switch ($Command) {
   'monitors' {
     $out=@(); $i=0
@@ -147,6 +180,18 @@ switch ($Command) {
   'get-wallpaper' {
     if (-not $MonitorId) { throw 'get-wallpaper needs -MonitorId' }
     ConvertTo-Json -Compress -InputObject ([ordered]@{ path=[DesktopRider.Api]::GetWallpaper($MonitorId) })
+  }
+  'covering' {
+    ConvertTo-Json -Compress -InputObject (Get-Covering -Exclude $Hwnd -L $Left -T $Top -W $Width -H $Height)
+  }
+  'watch' {
+    # One PowerShell process stays alive per layer window; lib/native.js reads a JSON line whenever the state changes.
+    $last = $null
+    while ($true) {
+      $json = ConvertTo-Json -Compress -InputObject (Get-Covering -Exclude $Hwnd -L $Left -T $Top -W $Width -H $Height)
+      if ($json -ne $last) { [Console]::Out.WriteLine($json); [Console]::Out.Flush(); $last = $json }
+      Start-Sleep -Milliseconds 1000
+    }
   }
   'layer-info' {
     if ($Hwnd -eq 0) { throw 'layer-info needs -Hwnd' }

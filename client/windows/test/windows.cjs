@@ -23,6 +23,9 @@ const showMain=app=>app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindo
 async function launch(userData){
  const app=await electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'..'),'--user-data-dir='+userData],env:{...process.env,ELECTRON_ENABLE_LOGGING:'0'}});
  const page=await app.firstWindow();await page.waitForLoadState('domcontentloaded');
+ // The default 1440×960 main window would hide the whole 1024×768 runner desktop — and the power policy would then
+ // rightly pause the layer videos. Keep it a normal window that leaves desktop visible.
+ await app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindow.getAllWindows())if(/^http:/.test(w.webContents.getURL())){w.unmaximize();w.setBounds({x:60,y:40,width:900,height:640});}});
  await page.locator('#piece-left').evaluate(el=>new Promise(r=>{const c=()=>el.style.backgroundImage?r():requestAnimationFrame(c);c();}));
  return {app,page};
 }
@@ -125,6 +128,18 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.ok(readA.clip[3]===255&&readB.clip[3]===255&&readA.clip.slice(0,3).some((v,i)=>Math.abs(v-readB.clip[i])>24),'the clip\'s centre changes between frames: '+JSON.stringify([readA.clip,readB.clip]));
   assert.deepEqual(readA.beside,readB.beside,'the wallpaper beside the clip is still');
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('2c-clip.png');await showMain(app);
+  // Power saving: maximising the main window hides the desktop → the bridge watcher reports it → the clip pauses and the
+  // canvas stops redrawing; restoring the window resumes playback. (Lock screen / battery use the same path via powerMonitor.)
+  const mainWin=fn=>app.evaluate(({BrowserWindow},fn)=>{const w=BrowserWindow.getAllWindows().find(w=>/^http:/.test(w.webContents.getURL()));return eval(fn)(w);},fn.toString());
+  await mainWin(w=>{w.show();w.maximize();});
+  const pausedLayer=await until(page,async()=>{const l=await desktopRider.layers();return l[0]&&l[0].paused?l[0]:null;},'the layer pausing behind a maximised window',20000);log('paused behind maximised window',{layer:pausedLayer});
+  assert.equal(pausedLayer.pauseReason,'covered');assert.ok(pausedLayer.covering&&pausedLayer.covering.zoomed,'the covering window is the maximised one: '+JSON.stringify(pausedLayer.covering));
+  const pausedA=await layerWin().evaluate(()=>({paused:window.__paused,reason:window.__pauseReason,all:window.__clips.every(v=>v.paused),frames:window.__frames}));await page.waitForTimeout(1000);const pausedB=await layerWin().evaluate(()=>window.__frames);log('paused reads',{pausedA,framesLater:pausedB});
+  assert.ok(pausedA.paused&&pausedA.all&&pausedA.reason==='covered','every clip video is paused in the layer window');assert.ok(pausedB-pausedA.frames<=2,'no redraws while paused: '+(pausedB-pausedA.frames));
+  await mainWin(w=>{w.unmaximize();w.setBounds({x:60,y:40,width:900,height:640});});
+  const resumedLayer=await until(page,async()=>{const l=await desktopRider.layers();return l[0]&&!l[0].paused?l[0]:null;},'the layer resuming',20000);log('resumed',{layer:resumedLayer});
+  let resumed=null;for(const t0=Date.now();Date.now()-t0<20000;){resumed=await layerWin().evaluate(()=>({frames:window.__frames,paused:window.__paused||window.__clips.some(v=>v.paused)}));if(!resumed.paused&&resumed.frames>pausedB+3)break;await page.waitForTimeout(400);}
+  log('resumed reads',resumed);assert.ok(resumed&&!resumed.paused&&resumed.frames>pausedB+3,'clips play again after the window is restored');
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers');m.remove(m.me().items.at(-1));});await page.waitForFunction(()=>state.modules.layers.items.length===0);
   assert.deepEqual(errors,[],'no page errors after the clip step');
 
@@ -170,6 +185,6 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window (paused behind a maximised window, resumed after), restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
  console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});

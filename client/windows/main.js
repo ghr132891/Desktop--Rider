@@ -2,7 +2,7 @@
 // Desktop Rider Windows client (Electron). Hosts the web app from a loopback server, applies
 // rendered wallpapers per monitor through native/bridge.ps1, keeps transparent "desktop layer"
 // windows under the icons for the floating person, and lives in the tray with optional autostart.
-const {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,screen,shell}=require('electron');
+const {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,screen,shell,powerMonitor}=require('electron');
 const path=require('node:path'),fs=require('node:fs'),fsp=fs.promises,crypto=require('node:crypto');
 const server=require('./lib/server'),{create:createNative,hwndOf}=require('./lib/native'),native=createNative();
 const WEB_ROOT=app.isPackaged?path.join(process.resourcesPath,'web'):path.join(__dirname,'..','..');
@@ -12,7 +12,7 @@ let mainWindow=null,tray=null,web=null,quitting=false;
 const layers=new Map(); // monitorId -> {window,file,rect}
 const readJson=(file,fallback)=>{try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{return fallback;}};
 const writeJson=(file,value)=>fsp.mkdir(path.dirname(file),{recursive:true}).then(()=>fsp.writeFile(file,JSON.stringify(value,null,1)));
-let settings={openAtLogin:false,...readJson(SETTINGS,{})};
+let settings={openAtLogin:false,powerSave:true,...readJson(SETTINGS,{})};
 const status=message=>{mainWindow?.webContents.send('client:status',message);};
 const keyOf=monitorId=>crypto.createHash('sha1').update(monitorId).digest('hex').slice(0,12);
 const dataUrlToPng=url=>{const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(url||'');if(!m)throw new Error('需要 PNG 图片');const buf=Buffer.from(m[1],'base64');if(buf.length>96*1024*1024)throw new Error('图片过大');return buf;};
@@ -21,13 +21,14 @@ const dataUrlToPng=url=>{const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.ex
 app.commandLine.appendSwitch('disable-renderer-backgrounding');app.commandLine.appendSwitch('disable-background-timer-throttling');app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion');
 const fileUrl=p=>require('node:url').pathToFileURL(p).href;
 const {checkLive,checkClips}=require('./lib/live');
+const {decide:decidePower}=require('./lib/power');
 
 if(!app.requestSingleInstanceLock()){app.quit();}
 else{
  app.on('second-instance',()=>showMain());
  app.whenReady().then(async()=>{
   web=await server.start(WEB_ROOT);
-  createMain();createTray();applyLoginItem();
+  createMain();createTray();applyLoginItem();watchPower();
   await restoreLayers();
  });
 }
@@ -50,12 +51,29 @@ function createTray(){
   {label:'隐藏桌面层',click:async()=>{for(const id of [...layers.keys()])await clearLayer(id);}},
   {type:'separator'},
   {label:'开机启动',type:'checkbox',checked:settings.openAtLogin,click:async item=>{await setSettings({openAtLogin:item.checked});rebuild();}},
+  {label:'节能：桌面被遮住或用电池时暂停视频',type:'checkbox',checked:settings.powerSave!==false,click:async item=>{await setSettings({powerSave:item.checked});rebuild();}},
   {type:'separator'},
   {label:'退出',click:()=>{quitting=true;app.quit();}}]));
  rebuild();tray.on('double-click',showMain);
 }
 function applyLoginItem(){if(process.platform==='win32'||process.platform==='darwin')app.setLoginItemSettings({openAtLogin:!!settings.openAtLogin,args:['--hidden']});}
-async function setSettings(patch){if(patch&&typeof patch.openAtLogin==='boolean')settings.openAtLogin=patch.openAtLogin;await writeJson(SETTINGS,settings);applyLoginItem();return settings;}
+async function setSettings(patch){if(patch&&typeof patch.openAtLogin==='boolean')settings.openAtLogin=patch.openAtLogin;if(patch&&typeof patch.powerSave==='boolean')settings.powerSave=patch.powerSave;await writeJson(SETTINGS,settings);applyLoginItem();powerAll();return settings;}
+// ---- power saving for the layer videos (lib/power.js decides; layer.html pauses) ----
+const power={locked:false,onBattery:false,suspended:false};
+const hasVideo=e=>!!(e.live||(e.clips&&e.clips.length));
+function applyPower(entry){const d=decidePower({suspended:power.suspended,locked:power.locked,covered:!!entry.covered,onBattery:power.onBattery,powerSave:settings.powerSave!==false});
+ const paused=hasVideo(entry)&&d.paused,reason=paused?d.reason:'';if(entry.paused===paused&&entry.pauseReason===reason)return;entry.paused=paused;entry.pauseReason=reason;
+ if(entry.window.isDestroyed())return;const wc=entry.window.webContents,send=()=>wc.executeJavaScript(`window.__setPaused&&window.__setPaused(${paused},${JSON.stringify(reason)})`).catch(()=>{});
+ if(wc.isLoading())wc.once('did-finish-load',send);else send();}
+function powerAll(){for(const e of layers.values())applyPower(e);}
+// One bridge watcher per layer window with video: is a window hiding this monitor's desktop?
+function watchEntry(entry){entry.watcher?.stop();entry.watcher=null;entry.covered=false;entry.covering=null;
+ if(hasVideo(entry)&&!entry.window.isDestroyed()&&process.platform==='win32')entry.watcher=native.watchCovering(hwndOf(entry.window.getNativeWindowHandle()),entry.rect,state=>{entry.covered=!!state.covered;entry.covering=state.covered?{class:state.class,zoomed:!!state.zoomed,hwnd:state.hwnd}:null;applyPower(entry);});
+ applyPower(entry);}
+function watchPower(){power.onBattery=powerMonitor.isOnBatteryPower();
+ powerMonitor.on('lock-screen',()=>{power.locked=true;powerAll();});powerMonitor.on('unlock-screen',()=>{power.locked=false;powerAll();});
+ powerMonitor.on('on-battery',()=>{power.onBattery=true;powerAll();});powerMonitor.on('on-ac',()=>{power.onBattery=false;powerAll();});
+ powerMonitor.on('suspend',()=>{power.suspended=true;powerAll();});powerMonitor.on('resume',()=>{power.suspended=false;powerAll();});}
 
 // Monitors: the bridge on Windows (physical pixels, IDesktopWallpaper ids); Electron's displays elsewhere so the UI can be developed on any OS.
 async function monitors(){
@@ -95,8 +113,8 @@ async function showLayer(monitorId,monitor,content,stamp){
   const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
   win.setIgnoreMouseEvents(true);win.setMenuBarVisibility(false);
-  entry={window:win,overlay:null,live:null,clips:[],still:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
-  win.on('closed',()=>{if(layers.get(monitorId)===entry)layers.delete(monitorId);});
+  entry={window:win,overlay:null,live:null,clips:[],still:null,paused:false,pauseReason:'',covered:false,watcher:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
+  win.on('closed',()=>{entry.watcher?.stop();entry.watcher=null;if(layers.get(monitorId)===entry)layers.delete(monitorId);});
  }
  entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  let url=fileUrl(path.join(__dirname,'layer.html'))+'?v='+stamp;
@@ -106,8 +124,9 @@ async function showLayer(monitorId,monitor,content,stamp){
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
+ entry.paused=undefined;entry.pauseReason=undefined;watchEntry(entry); // a fresh page starts playing: re-evaluate and resend the decision
 }
-async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);
+async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);entry.watcher?.stop();entry.watcher=null;
  if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
  if(!entry.window.isDestroyed())entry.window.destroy();await saveLayers();}
 const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,overlay:e.overlay,live:e.live,clips:e.clips,still:e.still,rect:e.rect})));
@@ -129,7 +148,7 @@ ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
-ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:get-settings',()=>settings);
 ipcMain.handle('client:set-settings',(e,patch)=>setSettings(patch));
 process.on('unhandledRejection',error=>{console.error(error);if(mainWindow&&!mainWindow.isDestroyed())status('出错：'+(error?.message||error));});

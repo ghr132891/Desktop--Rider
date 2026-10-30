@@ -39,15 +39,16 @@ npm run dist
 | `lib/native.js` | 调起 `native/bridge.ps1` 并解析 JSON；参数全部作为 PowerShell 参数传递，不拼接字符串 |
 | `native/bridge.ps1` | Windows PowerShell 5.1 脚本，`Add-Type` 内嵌 C#：`IDesktopWallpaper`（枚举显示器、设壁纸）、`EnumDisplaySettings`（物理分辨率与位置，不受 DPI 虚拟化影响）、WorkerW 查找、`SetParent` / `SetWindowPos`、线程级每显示器 DPI 感知 |
 | `layer.html` | 桌面层窗口页面：`?img=` 透明叠加 PNG；`?live=` 时按几何方案播放分区视频；`?clips=` 时逐帧绘制图层视频（位置、旋转、翻转、圆角、滤镜、混合模式、人物上下）。只要有视频，整页就在一块 canvas 上合成 |
+| `lib/power.js` | 桌面层视频的节能决策（纯函数）：锁屏、休眠始终暂停；桌面被全屏 / 最大化窗口遮住、电池供电时按「节能暂停」设置暂停 |
 | `lib/live.js` | 校验网页侧发来的动态壁纸数据（视频字节、容器类型、每块分区的多边形与目标矩形） |
 | `../../modules/client.js` | 网页侧模块，只有在 `window.desktopRider` 存在时注册 |
 | `test/lib.test.cjs` | 单元测试（任何系统）：参数构造、句柄转换、JSON 解析、静态服务器 |
 | `test/smoke.cjs` | 用 Playwright 启动真实 Electron：页面加载、桥存在、显示器列表、非 Windows 下应用失败并提示 |
-| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再把左侧分区画面推出露白，分别以间隙色、本机扩图、重新开启不露白应用，用 `nativeImage` 读系统正在显示的 PNG 左缘像素核对填充结果；再录一段颜色循环的 WebM 加为人物之上的视频图层并应用，读层窗口画布确认图层中心逐帧变化、旁边壁纸不变；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
+| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再把左侧分区画面推出露白，分别以间隙色、本机扩图、重新开启不露白应用，用 `nativeImage` 读系统正在显示的 PNG 左缘像素核对填充结果；再录一段颜色循环的 WebM 加为人物之上的视频图层并应用，读层窗口画布确认图层中心逐帧变化、旁边壁纸不变；再把主窗口最大化遮住桌面，确认层窗口被判定为 covered、所有视频暂停且画布不再重绘，还原窗口后恢复播放；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
-分割线为弧形 / 波浪时方案里的多边形最多 50 个点（校验上限 128）；换成自己图片的分区不在播放方案里，层页面把静帧 PNG 铺在底下，那块就显示静帧。图层模块的视频层（最多 6 个）作为 `clips` 一起交给客户端：每个视频写成 `<key>-clip-<n>-<stamp>.<ext>`，层页面按方案在同一块画布上逐帧绘制——静帧壁纸、动态壁纸分块、人物之下的视频层、叠加 PNG、人物之上的视频层——变换、圆角、滤镜与混合模式与预览一致（混合模式以画布里的内容为底）。
+分割线为弧形 / 波浪时方案里的多边形最多 50 个点（校验上限 128）；换成自己图片的分区不在播放方案里，层页面把静帧 PNG 铺在底下，那块就显示静帧。节能：每个有视频的层窗口由一个常驻的 `bridge.ps1 -Command watch` 进程每秒检查该显示器的桌面是否被可见、未最小化、未 cloaked、非点击穿透的顶层窗口最大化或整幅覆盖（排除 Progman / WorkerW / 任务栏等外壳窗口），状态变化时输出一行 JSON；主进程结合 `powerMonitor` 的锁屏 / 电池 / 休眠事件由 `lib/power.js` 决定是否暂停，并调用层页面的 `window.__setPaused`。层页面只在视频出新帧时重绘（`requestVideoFrameCallback`），暂停时零重绘。图层模块的视频层（最多 6 个）作为 `clips` 一起交给客户端：每个视频写成 `<key>-clip-<n>-<stamp>.<ext>`，层页面按方案在同一块画布上逐帧绘制——静帧壁纸、动态壁纸分块、人物之下的视频层、叠加 PNG、人物之上的视频层——变换、圆角、滤镜与混合模式与预览一致（混合模式以画布里的内容为底）。
 
 渲染分层由网页侧 `wallpaperCanvas(s,width,{layers})` 提供：`background`（壁纸 + 人物之下的模块）设为系统壁纸，`overlay`（透明：人物副本 + 人物之上的模块）给桌面层；两者叠加与导出 PNG 逐像素一致（`tools/verify-client.cjs` 校验）。没有任何悬浮内容时不创建桌面层。
 

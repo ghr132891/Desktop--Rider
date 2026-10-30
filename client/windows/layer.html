@@ -10,24 +10,35 @@
 //   ?clips=<json>     {width,height,still,items:[{video,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}]}
 //                     video layers (modules/layers.js), each painted per frame with its own transform, look and blend mode
 //   &v=<stamp>        defeats the image cache
-// Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas per frame —
+// Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas —
 // still wallpaper, live pieces, clips below the person, the overlay, clips above it — so blend modes have a backdrop.
+// Redraws happen only when a video presents a new frame (requestVideoFrameCallback) or an image finishes loading; a
+// 30 fps video therefore costs 30 draws a second, whatever the monitor's refresh rate.
+// main.js calls window.__setPaused(paused, reason) from lib/power.js: desktop hidden by a window, lock screen,
+// battery, suspend. Paused videos present no frames, so nothing is drawn until playback resumes.
 const q=new URLSearchParams(location.search),img=document.getElementById('overlay'),canvas=document.getElementById('live');
-window.__frames=0;
+window.__frames=0;window.__paused=false;window.__pauseReason='';window.__clips=[];window.__video=null;
 const live=q.get('live')?JSON.parse(q.get('live')):null,clips=q.get('clips')?JSON.parse(q.get('clips')):null,overlaySrc=q.get('img')?q.get('img')+'#'+(q.get('v')||''):null;
 const items=(clips&&Array.isArray(clips.items)?clips.items:[]);
+window.__setPaused=()=>{};
 if(!live&&!items.length){if(overlaySrc){img.hidden=false;img.src=overlaySrc;}}
 else{
  const W=live?live.plan.width:clips.width,H=live?live.plan.height:clips.height;
  canvas.hidden=false;canvas.width=W;canvas.height=H;const ctx=canvas.getContext('2d');
  if(live)document.body.style.background=live.plan.gapColor;
- let dirty=true;const picture=src=>{if(!src)return null;const im=new Image();im.onload=()=>{dirty=true;};im.src=src;return im;};
+ let scheduled=false;const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;render();});};
+ const picture=src=>{if(!src)return null;const im=new Image();im.onload=schedule;im.src=src;return im;};
  const still=picture(live?.still||clips?.still||null),overlay=picture(overlaySrc);
- const mkVideo=src=>{const v=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});v.addEventListener('loadeddata',()=>{dirty=true;});v.play().catch(()=>{});return v;};
+ const videos=[];
+ const mkVideo=src=>{const v=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src});
+  v.addEventListener('loadeddata',schedule);
+  if(typeof v.requestVideoFrameCallback==='function'){const onFrame=()=>{schedule();v.requestVideoFrameCallback(onFrame);};v.requestVideoFrameCallback(onFrame);}
+  else{let last=-1;const poll=()=>{if(v.currentTime!==last){last=v.currentTime;schedule();}requestAnimationFrame(poll);};requestAnimationFrame(poll);} // older Chromium: fall back to polling
+  videos.push(v);if(!window.__paused)v.play().catch(()=>{});return v;};
  const liveVideo=live?mkVideo(live.video):null;if(liveVideo)liveVideo.addEventListener('error',()=>{document.title='Desktop Rider 桌面层 · 视频无法播放';});
  for(const c of items)c.video=mkVideo(c.video);
  window.__video=liveVideo||items[0]?.video||null;window.__clips=items.map(c=>c.video);
- const videos=[liveVideo,...items.map(c=>c.video)].filter(Boolean),last=videos.map(()=>-1);
+ window.__setPaused=(paused,reason)=>{window.__paused=!!paused;window.__pauseReason=paused?String(reason||''):'';for(const v of videos){if(paused)v.pause();else v.play().catch(()=>{});}if(!paused)schedule();};
  const blends={normal:'source-over',multiply:'multiply',screen:'screen',overlay:'overlay','soft-light':'soft-light',lighten:'lighten',darken:'darken',difference:'difference'};
  const ready=im=>im&&im.complete&&im.naturalWidth>0;
  const drawClip=c=>{const v=c.video;if(v.readyState<2||!v.videoWidth)return;ctx.save();
@@ -38,17 +49,15 @@ else{
   let dw=c.w,dh=c.h,sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;
   if(c.fit==='cover'){const k=Math.max(c.w/sw,c.h/sh);sw=c.w/k;sh=c.h/k;sx=(v.videoWidth-sw)/2;sy=(v.videoHeight-sh)/2;}else if(c.fit==='contain'){const k=Math.min(c.w/sw,c.h/sh);dw=sw*k;dh=sh*k;}
   ctx.drawImage(v,sx,sy,sw,sh,-dw/2,-dh/2,dw,dh);ctx.restore();};
- const draw=()=>{
-  let changed=dirty;videos.forEach((v,i)=>{if(v.currentTime!==last[i]){last[i]=v.currentTime;changed=true;}});
-  if(changed){dirty=false;ctx.clearRect(0,0,W,H);
-   if(live){ctx.fillStyle=live.plan.gapColor;ctx.fillRect(0,0,W,H);}
-   if(ready(still))ctx.drawImage(still,0,0,W,H);
-   if(liveVideo&&liveVideo.readyState>=2)for(const p of live.plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(liveVideo,p.x,p.y,p.w,p.h);ctx.restore();}
-   for(const c of items)if(!c.above)drawClip(c);
-   if(ready(overlay))ctx.drawImage(overlay,0,0,W,H);
-   for(const c of items)if(c.above)drawClip(c);
-   window.__frames++;}
-  requestAnimationFrame(draw);};
- requestAnimationFrame(draw);
+ const render=()=>{
+  ctx.clearRect(0,0,W,H);
+  if(live){ctx.fillStyle=live.plan.gapColor;ctx.fillRect(0,0,W,H);}
+  if(ready(still))ctx.drawImage(still,0,0,W,H);
+  if(liveVideo&&liveVideo.readyState>=2)for(const p of live.plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(liveVideo,p.x,p.y,p.w,p.h);ctx.restore();}
+  for(const c of items)if(!c.above)drawClip(c);
+  if(ready(overlay))ctx.drawImage(overlay,0,0,W,H);
+  for(const c of items)if(c.above)drawClip(c);
+  window.__frames++;};
+ schedule();
 }
 </script></body></html>
