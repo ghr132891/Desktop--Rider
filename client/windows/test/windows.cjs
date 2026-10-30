@@ -112,7 +112,8 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
    let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers'),it=m.me().items.at(-1);Object.assign(it,{x:75,y:25,w:20,h:24,above:true,rotate:15,radius:20,blend:'normal',opacity:100});m.changed();});
   await page.waitForFunction(()=>document.querySelectorAll('.layer-item video').length===1&&!document.querySelector('.layer-item video').paused,null,{timeout:30000});log('video layer added',{item:await page.evaluate(()=>({...state.modules.layers.items.at(-1)}))});
-  await page.evaluate(()=>{document.querySelector('#client-status').textContent='';});await page.locator('.client-monitor').nth(primary.index).click();
+  // Adding a layer switches the sidebar to the 图层 view; go back to the client view before applying.
+  await page.locator('[data-view="client"]').click();await page.evaluate(()=>{document.querySelector('#client-status').textContent='';});await page.locator('.client-monitor').nth(primary.index).click();
   await page.waitForFunction(()=>/^(已应用到显示器 \d+（含动态图层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
   const clipStatus=await page.locator('#client-status').textContent();log('clip apply status',{status:clipStatus});assert.match(clipStatus,/（含动态图层）$/);
   const clipLayers=await page.evaluate(()=>desktopRider.layers());log('clip layers',{layers:clipLayers});assert.equal(clipLayers.length,1);assert.equal(clipLayers[0].clips,1);assert.equal(clipLayers[0].live,false);
