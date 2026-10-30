@@ -31,6 +31,9 @@ test('static server serves the web root only',async()=>{
  try{
   const index=await get(s.url);assert.equal(index.status,200);assert.match(index.headers['content-type'],/text\/html/);assert.ok(index.body.includes('Desktop Rider'));
   const js=await get(s.url+'core.js');assert.equal(js.status,200);assert.match(js.headers['content-type'],/javascript/);
+  // The person worker does import('./vendor/mediapipe/vision_bundle.mjs'): modules need a JavaScript MIME type, WASM needs application/wasm.
+  const mjs=await get(s.url+'vendor/mediapipe/vision_bundle.mjs');assert.equal(mjs.status,200);assert.match(mjs.headers['content-type'],/^text\/javascript/);
+  assert.equal(server.types['.wasm'],'application/wasm');assert.equal(server.types['.tflite'],'application/octet-stream');
   assert.equal((await get(s.url+'missing.file')).status,404);
   assert.equal((await get(s.url+'..%2F..%2Fetc%2Fpasswd')).status,403);
   assert.equal(server.resolveFile(root,'/../package.json'),null);assert.equal(server.resolveFile(root,'/%ZZ'),null);

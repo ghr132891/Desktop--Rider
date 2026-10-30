@@ -16,21 +16,66 @@
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "playwright-core": "^1.62.1"
   },
   "build": {
     "appId": "com.desktoprider.windows",
     "productName": "Desktop Rider",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "layer.html", "lib/**", "native/**", "assets/**", "!test/**"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "layer.html",
+      "lib/**",
+      "native/**",
+      "assets/**",
+      "!test/**"
+    ],
     "extraResources": [
-      { "from": "../../", "to": "web", "filter": ["index.html", "styles.css", "core.js", "app.js", "cutout.js", "portrait.js", "inpaint-worker.js", "person-worker.js", "wallpaper-engine.js", "modules/**", "assets/**", "vendor/**"] }
+      {
+        "from": "../../",
+        "to": "web",
+        "filter": [
+          "index.html",
+          "styles.css",
+          "core.js",
+          "app.js",
+          "cutout.js",
+          "portrait.js",
+          "inpaint-worker.js",
+          "person-worker.js",
+          "wallpaper-engine.js",
+          "modules/**",
+          "assets/**",
+          "vendor/**"
+        ]
+      }
     ],
     "win": {
       "icon": "build/icon.png",
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "DesktopRider-${version}-${arch}.${ext}"
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false }
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
   }
 }

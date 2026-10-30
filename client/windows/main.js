@@ -4,7 +4,7 @@
 // windows under the icons for the floating person, and lives in the tray with optional autostart.
 const {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,screen,shell}=require('electron');
 const path=require('node:path'),fs=require('node:fs'),fsp=fs.promises,crypto=require('node:crypto');
-const server=require('./lib/server'),native=require('./lib/native').create();
+const server=require('./lib/server'),{create:createNative,hwndOf}=require('./lib/native'),native=createNative();
 const WEB_ROOT=app.isPackaged?path.join(process.resourcesPath,'web'):path.join(__dirname,'..','..');
 const DATA=path.join(app.getPath('userData'),'desktop'),SETTINGS=path.join(app.getPath('userData'),'settings.json'),LAYERS=path.join(DATA,'layers.json');
 const startHidden=process.argv.includes('--hidden');
@@ -82,11 +82,11 @@ async function showLayer(monitorId,monitor,file,stamp){
  entry.file=file;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  const url='file://'+path.join(__dirname,'layer.html').replace(/\\/g,'/')+'?img='+encodeURIComponent('file://'+file.replace(/\\/g,'/'))+'&v='+stamp;
  await entry.window.loadURL(url);entry.window.showInactive();
- if(process.platform==='win32'){const result=await native.attachLayer(require('./lib/native').hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
+ if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
 }
 async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);
- if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(require('./lib/native').hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
+ if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
  if(!entry.window.isDestroyed())entry.window.destroy();await saveLayers();}
 const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,file:e.file,rect:e.rect})));
 // Windows keeps the wallpaper itself; the layer windows are ours to bring back after a restart.
@@ -101,7 +101,8 @@ ipcMain.on('client:version',e=>{e.returnValue=app.getVersion();});
 ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
-ipcMain.handle('client:layers',()=>[...layers.keys()]);
+// One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,file:e.file,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:get-settings',()=>settings);
 ipcMain.handle('client:set-settings',(e,patch)=>setSettings(patch));
 process.on('unhandledRejection',error=>{console.error(error);if(mainWindow&&!mainWindow.isDestroyed())status('出错：'+(error?.message||error));});

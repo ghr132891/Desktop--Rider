@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('desktopRider',{
  // {monitorId, background: PNG data URL, overlay: PNG data URL | null}
  applyWallpaper:request=>ipcRenderer.invoke('client:apply',request),
  clearLayer:monitorId=>ipcRenderer.invoke('client:clear-layer',monitorId),
- layers:()=>ipcRenderer.invoke('client:layers'),
+ layers:()=>ipcRenderer.invoke('client:layers'), // [{monitorId, host, attached, rect, file, hwnd}]
  getSettings:()=>ipcRenderer.invoke('client:get-settings'),
  setSettings:patch=>ipcRenderer.invoke('client:set-settings',patch),
  onStatus:handler=>{const fn=(_,msg)=>handler(msg);ipcRenderer.on('client:status',fn);return()=>ipcRenderer.removeListener('client:status',fn);}

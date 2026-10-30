@@ -20,15 +20,17 @@ if(window.desktopRider)Rider.register({
   $('#client-refresh').addEventListener('click',()=>this.refresh());
   $('#client-apply-all').addEventListener('click',()=>this.applyAll());
   $('#client-clear').addEventListener('click',async()=>{for(const m of this.monitors)await desktopRider.clearLayer(m.id).catch(()=>{});this.say('已移除全部桌面层');});
-  $('#client-autostart').addEventListener('change',async e=>{try{await desktopRider.setSettings({openAtLogin:e.target.checked});this.say(e.target.checked?'已设置开机启动':'已取消开机启动');}catch(error){this.say('设置失败：'+error.message);}});
+  $('#client-autostart').addEventListener('change',async e=>{try{await desktopRider.setSettings({openAtLogin:e.target.checked});this.say(e.target.checked?'已设置开机启动':'已取消开机启动');}catch(error){this.say('设置失败：'+this.reason(error));}});
   desktopRider.onStatus(msg=>this.say(msg));
   desktopRider.getSettings().then(s=>{$('#client-autostart').checked=!!s.openAtLogin;}).catch(()=>{});
   this.refresh();
  },
  say(text){this.$('#client-status').textContent=text;},
+ // Electron wraps rejected IPC errors in "Error invoking remote method 'x': Error: …"; show only our message.
+ reason(error){return String(error&&error.message||error).replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'');},
  async refresh(){
   const root=this.$('#client-monitors');root.textContent='正在读取显示器…';
-  try{this.monitors=await desktopRider.monitors();}catch(error){this.monitors=[];root.textContent='';this.say('读取显示器失败：'+error.message);return;}
+  try{this.monitors=await desktopRider.monitors();}catch(error){this.monitors=[];root.textContent='';this.say('读取显示器失败：'+this.reason(error));return;}
   root.replaceChildren();
   if(!this.monitors.length)root.textContent='没有找到显示器。';
   this.monitors.forEach(m=>{const btn=document.createElement('button');btn.type='button';btn.className='client-monitor';btn.dataset.monitor=m.id;
@@ -41,7 +43,7 @@ if(window.desktopRider)Rider.register({
   return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null};},
  async apply(m){if(this.busy)return;this.busy=true;this.$('#client-monitors').classList.add('busy');
   try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
-  catch(error){this.say('应用失败：'+error.message);this.api.toast('应用失败：'+error.message);}
+  catch(error){const why=this.reason(error);this.say('应用失败：'+why);this.api.toast('应用失败：'+why);}
   finally{this.busy=false;this.$('#client-monitors').classList.remove('busy');}},
  async applyAll(){for(const m of this.monitors)await this.apply(m);}
 });

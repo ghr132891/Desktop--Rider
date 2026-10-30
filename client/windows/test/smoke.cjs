@@ -2,7 +2,7 @@
 // Launches the real Electron app (any OS) with Playwright: the web app loads from the loopback
 // server, the preload bridge is present, monitors come back, and applying on a non-Windows
 // host fails with the expected message instead of crashing. Run: node test/smoke.cjs
-const {_electron:electron}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {_electron:electron}=require('playwright-core');
 const assert=require('node:assert/strict'),path=require('node:path'),os=require('node:os'),fs=require('node:fs');
 (async()=>{
  const userData=fs.mkdtempSync(path.join(os.tmpdir(),'desktop-rider-smoke-'));

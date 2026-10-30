@@ -41,6 +41,9 @@ npm run dist
 | `../../modules/client.js` | 网页侧模块，只有在 `window.desktopRider` 存在时注册 |
 | `test/lib.test.cjs` | 单元测试（任何系统）：参数构造、句柄转换、JSON 解析、静态服务器 |
 | `test/smoke.cjs` | 用 Playwright 启动真实 Electron：页面加载、桥存在、显示器列表、非 Windows 下应用失败并提示 |
+| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形，重启恢复、清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
+| `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
+| `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
 渲染分层由网页侧 `wallpaperCanvas(s,width,{layers})` 提供：`background`（壁纸 + 人物之下的模块）设为系统壁纸，`overlay`（透明：人物副本 + 人物之上的模块）给桌面层；两者叠加与导出 PNG 逐像素一致（`tools/verify-client.cjs` 校验）。没有任何悬浮内容时不创建桌面层。
 
@@ -55,10 +58,13 @@ npm run dist
 ## 验证
 
 ```bash
-npm test          # 单元测试
-npm run smoke     # Electron 启动烟测（需已安装 electron）
+npm test                # 单元测试（任何系统）
+npm run smoke           # Electron 启动烟测（任何系统）
+node test/windows.cjs   # 仅 Windows：真调用桥、回查系统状态、截图
 ```
 
 仓库根目录另有 `node tools/verify-client.cjs`，用假的 `window.desktopRider` 在普通 Chromium 中验证网页侧模块与分层渲染。
+
+**没有 Windows 机器时**：推送到 `main`（或手动触发 Actions 里的 "Windows client"）后，GitHub 的 Windows 运行器会跑完上面三项。运行器带交互桌面且 Explorer 在运行，所以 `bridge.ps1` 是真的在设壁纸、挂桌面层；`windows-2025` 走 Progman 分支，`windows-2022` 走 WorkerW 分支。每次运行的 artifact 里有应用前后的整屏截图（`desktop-<os>`）与 x64 安装包（`DesktopRider-windows-x64`）。它是 Windows Server 而非 Win11 客户端版，托盘与开机启动的交互还是要在真机上看。
 
 Windows 真机上建议按顺序检查：显示器列表与分辨率是否正确 → 应用后壁纸是否按屏幕变化 → 开启人物悬浮再应用，人物是否出现在图标之下、能否被图标遮挡、点击是否穿透到桌面 → 退出后重开是否恢复桌面层 → 开机启动。

@@ -1,0 +1,107 @@
+# Windows client verification on real Windows (GitHub-hosted runners have an interactive desktop
+# with Explorer running, so bridge.ps1 can set wallpapers and parent layer windows for real).
+#   windows-2025 → Windows Server 2025, the Windows 11 24H2 codebase (Progman branch)
+#   windows-2022 → Windows Server 2022, the Windows 10 21H2 codebase (WorkerW branch)
+# Each run uploads desktop screenshots + report.json; the dist job uploads the x64 installer.
+name: Windows client
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'core.js'
+      - 'app.js'
+      - 'cutout.js'
+      - 'portrait.js'
+      - 'wallpaper-engine.js'
+      - '*-worker.js'
+      - 'modules/**'
+      - 'index.html'
+      - 'styles.css'
+      - 'vendor/**'
+      - 'assets/**'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'core.js'
+      - 'app.js'
+      - 'modules/**'
+      - 'index.html'
+      - 'styles.css'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: client/windows
+
+jobs:
+  verify:
+    name: Verify on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/windows/package-lock.json
+      - name: System info
+        shell: pwsh
+        run: |
+          [System.Environment]::OSVersion.VersionString
+          Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' | Select-Object ProductName, DisplayVersion, CurrentBuild | Format-List
+          Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId | Format-Table
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::AllScreens | Select-Object DeviceName, Primary, Bounds | Format-List
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Electron smoke test
+        run: npm run smoke
+      - name: Desktop integration (bridge.ps1 against the real desktop)
+        run: node test/windows.cjs
+        env:
+          DESKTOP_RIDER_OUT: ${{ github.workspace }}/client/windows/test/out
+      - name: Upload desktop screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: client/windows/test/out
+          if-no-files-found: ignore
+
+  dist:
+    name: Installer (x64)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/windows/package-lock.json
+      - run: npm ci
+      - name: Build NSIS installer and portable exe
+        run: npm run dist -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DesktopRider-windows-x64
+          path: |
+            client/windows/dist/*.exe
+            client/windows/dist/*.yml
+          if-no-files-found: error

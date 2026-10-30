@@ -22,7 +22,10 @@ function create({runner=defaultRunner,platform=process.platform}={}){
   monitors:()=>run('monitors').then(list=>Array.isArray(list)?list:[]),
   setWallpaper:(monitorId,file)=>run('set-wallpaper',{monitorId,path:file}),
   attachLayer:(hwnd,rect)=>run('attach-layer',{hwnd,left:rect.left,top:rect.top,width:rect.width,height:rect.height}),
-  detachLayer:hwnd=>run('detach-layer',{hwnd})
+  detachLayer:hwnd=>run('detach-layer',{hwnd}),
+  // Verification helpers (used by test/windows.cjs): what Windows currently reports.
+  getWallpaper:monitorId=>run('get-wallpaper',{monitorId}).then(r=>r.path||''),
+  layerInfo:hwnd=>run('layer-info',{hwnd})
  };
 }
 module.exports={create,args,parse,hwndOf,SCRIPT};

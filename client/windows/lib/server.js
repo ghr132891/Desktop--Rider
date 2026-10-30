@@ -3,7 +3,7 @@
 // which Chromium refuses over file://, so the client serves the repo (or the packaged web/
 // folder) exactly like tools/serve.py does for development.
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.tflite':'application/octet-stream','.bin':'application/octet-stream','.txt':'text/plain; charset=utf-8','.md':'text/plain; charset=utf-8'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.tflite':'application/octet-stream','.bin':'application/octet-stream','.txt':'text/plain; charset=utf-8','.md':'text/plain; charset=utf-8'};
 function resolveFile(root,urlPath){
  let p;try{p=decodeURIComponent(urlPath.split('?')[0]);}catch{return null;}
  if(p.endsWith('/'))p+='index.html';

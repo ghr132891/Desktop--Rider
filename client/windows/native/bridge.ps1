@@ -3,11 +3,13 @@
 #   bridge.ps1 -Command set-wallpaper -MonitorId <id> -Path <png>
 #   bridge.ps1 -Command attach-layer -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>
 #   bridge.ps1 -Command detach-layer -Hwnd <n>
+#   bridge.ps1 -Command get-wallpaper -MonitorId <id>      (verification: current wallpaper file)
+#   bridge.ps1 -Command layer-info -Hwnd <n>               (verification: parent class, visibility, screen rect)
 # Prints one JSON document on stdout; any failure goes to stderr with exit code 1.
 # Needs only Windows PowerShell 5.1 (present on every Win10/11) — the C# below is
 # compiled in memory by Add-Type, no SDK required.
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer')][string]$Command,
+  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info')][string]$Command,
   [string]$MonitorId,[string]$Path,[long]$Hwnd=0,[int]$Left=0,[int]$Top=0,[int]$Width=0,[int]$Height=0
 )
 $ErrorActionPreference='Stop'
@@ -51,6 +53,10 @@ namespace DesktopRider {
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
     const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
     // powershell.exe is system-DPI-aware by manifest, so the process context cannot be changed any
@@ -100,6 +106,14 @@ namespace DesktopRider {
       return mode;
     }
     public static void Detach(long hwnd) { IntPtr h = new IntPtr(hwnd); if (IsWindow(h)) { ShowWindow(h, 0); SetParent(h, IntPtr.Zero); } }
+    public static string GetWallpaper(string id) { var w = (IDesktopWallpaper)new DesktopWallpaperClass(); return w.GetWallpaper(id) ?? ""; }
+    // "parentClass|visible|left|top|right|bottom" in physical screen pixels, or "" when the handle is gone.
+    public static string LayerInfo(long hwnd) {
+      IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) return "";
+      IntPtr parent = GetParent(h); var name = new System.Text.StringBuilder(256); if (parent != IntPtr.Zero) GetClassName(parent, name, 256);
+      RECT rc; GetWindowRect(h, out rc);
+      return name + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + rc.Left + "|" + rc.Top + "|" + rc.Right + "|" + rc.Bottom;
+    }
   }
 }
 '@
@@ -126,5 +140,16 @@ switch ($Command) {
     if ($Hwnd -eq 0) { throw 'detach-layer needs -Hwnd' }
     [DesktopRider.Api]::Detach($Hwnd)
     ConvertTo-Json -Compress -InputObject ([ordered]@{ ok=$true })
+  }
+  'get-wallpaper' {
+    if (-not $MonitorId) { throw 'get-wallpaper needs -MonitorId' }
+    ConvertTo-Json -Compress -InputObject ([ordered]@{ path=[DesktopRider.Api]::GetWallpaper($MonitorId) })
+  }
+  'layer-info' {
+    if ($Hwnd -eq 0) { throw 'layer-info needs -Hwnd' }
+    $info=[DesktopRider.Api]::LayerInfo($Hwnd)
+    if (-not $info) { ConvertTo-Json -Compress -InputObject ([ordered]@{ valid=$false }) }
+    else { $p=$info.Split('|'); $l=[int]$p[2]; $t=[int]$p[3]; $r=[int]$p[4]; $b=[int]$p[5]
+      ConvertTo-Json -Compress -InputObject ([ordered]@{ valid=$true; parentClass=$p[0]; visible=($p[1] -eq '1'); left=$l; top=$t; width=($r-$l); height=($b-$t) }) }
   }
 }
