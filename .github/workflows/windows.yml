@@ -72,12 +72,20 @@ jobs:
           $explorer = (Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId
           "::notice title=process integrity::elevated=$admin; $label; explorer session=$explorer; job session=$([System.Diagnostics.Process]::GetCurrentProcess().SessionId)"
       - run: npm ci
+      # Each step repeats the tail of a failing command as an error annotation (test/ci-run.cjs): logs need a login.
+      - name: Bridge self-check (Windows PowerShell 5.1 compiles and answers)
+        shell: pwsh
+        run: |
+          $mon = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/bridge.ps1 -Command monitors 2>&1 | Out-String; $c1 = $LASTEXITCODE
+          $cov = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/bridge.ps1 -Command covering -Hwnd 0 -Left 0 -Top 0 -Width 1024 -Height 768 2>&1 | Out-String; $c2 = $LASTEXITCODE
+          $text = ("monitors (exit $c1): " + $mon.Trim() + "%0Acovering (exit $c2): " + $cov.Trim()) -replace "`r?`n", '%0A'
+          if ($c1 -ne 0 -or $c2 -ne 0) { "::error title=bridge.ps1 self-check::$text"; exit 1 } else { "::notice title=bridge.ps1 self-check::$text" }
       - name: Unit tests
-        run: npm test
+        run: node test/ci-run.cjs "npm test" npm test
       - name: Electron smoke test
-        run: npm run smoke
+        run: node test/ci-run.cjs "npm run smoke" npm run smoke
       - name: Desktop integration (bridge.ps1 against the real desktop)
-        run: node test/windows.cjs
+        run: node test/ci-run.cjs "test/windows.cjs" node test/windows.cjs
         env:
           DESKTOP_RIDER_OUT: ${{ github.workspace }}/client/windows/test/out
       - name: Upload desktop screenshots and report
