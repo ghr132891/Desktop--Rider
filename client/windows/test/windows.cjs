@@ -94,12 +94,16 @@ const rectOf=o=>({left:o.left,top:o.top,width:o.width,height:o.height});
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData,'desktop','layers.json'),'utf8')),[]);
   report.result='pass';
  }catch(error){
-  report.result='fail';report.error=error.stack||String(error);await screenshot('failure.png');throw error;
+  report.result='fail';report.error=error.stack||String(error);await screenshot('failure.png');
+  // GitHub Actions annotation: readable on the public run page without signing in to see logs.
+  if(process.env.GITHUB_ACTIONS)console.log('::error title=test/windows.cjs::'+String(error.message||error).replace(/\r?\n/g,'%0A')+'%0Asteps: '+JSON.stringify(report.steps).replace(/\r?\n/g,' ').slice(0,3000));
+  throw error;
  }finally{
   if(app)await app.close().catch(()=>{});
   if(original&&fs.existsSync(original))await bridge.setWallpaper(primary.id,original).then(()=>log('original wallpaper restored')).catch(error=>log('restore wallpaper failed',{error:error.message}));
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- console.log(`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, restored it after a restart and cleared it. Screenshots in ${OUT}`);
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, restored it after a restart and cleared it. Screenshots in ${OUT}`;
+ console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});
