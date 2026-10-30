@@ -101,7 +101,8 @@ namespace DesktopRider {
     public static string Attach(long hwnd, int left, int top, int width, int height) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) throw new Exception("window handle is not valid");
       string mode; IntPtr host = WallpaperHost(out mode); if (host == IntPtr.Zero) throw new Exception("desktop host window not found");
-      if (SetParent(h, host) == IntPtr.Zero) { int code = Marshal.GetLastWin32Error(); throw new Exception("SetParent 失败（Win32 错误 " + code + "）" + (code == 5 ? "：请不要以管理员身份运行 Desktop Rider，提权后的窗口无法挂到资源管理器的桌面之下" : "")); }
+      // Verified on the CI runners: works from an elevated (high-integrity) process too, so no special hint for error 5.
+      if (SetParent(h, host) == IntPtr.Zero) { int code = Marshal.GetLastWin32Error(); throw new Exception("SetParent 失败（Win32 错误 " + code + "），桌面层窗口无法挂到资源管理器的桌面之下"); }
       int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77); // child coordinates are relative to the virtual screen origin
       SetWindowPos(h, HWND_BOTTOM, left - vx, top - vy, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
       return mode;

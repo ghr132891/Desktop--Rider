@@ -54,7 +54,7 @@ npm run dist
 - 桌面层是静态图片，不随壁纸切换、分辨率变化自动重绘；重新点一次「应用」即可。Explorer 重启（例如资源管理器崩溃）后宿主窗口失效，需要重新应用。
 - 系统壁纸由 Windows 自行持久化；客户端重启只恢复桌面层窗口（读取 `%APPDATA%/desktop-rider-windows/desktop/layers.json`）。
 - 不修改注册表以外的系统设置；开机启动使用 Electron 的登录项接口（`HKCU\...\Run`）。
-- 不要以管理员身份运行：提权进程的窗口无法 `SetParent` 到资源管理器（普通权限）的桌面之下，桥脚本会以「Win32 错误 5」报错并给出提示。
+- `SetParent` 失败时桥脚本会带 Win32 错误码报错，而不是静默继续。以管理员身份运行并不影响：CI 任务本身就是高完整性进程（`elevated=True`，与资源管理器同一会话），桌面层照样挂到了 WorkerW / Progman 之下。
 
 ## 验证
 
