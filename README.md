@@ -91,7 +91,7 @@ python3 tools/serve.py
 
 人物悬浮与 Wallpaper Engine 导入回归：`node tools/verify-float.cjs`。覆盖自动抠图、背景补全、拖动 / 滚轮 / 键盘、导出位置、刷新恢复、点选添加 / 去除，以及用测试生成的 scene.pkg（内嵌 PNG、LZ4 原始 RGBA 与 DXT5 纹理，另含 DXT1 四色 / 三色块的逐像素校验）验证文件夹扫描和图层解码。
 
-客户端模块回归：`node tools/verify-client.cjs`，用假的 `window.desktopRider` 验证显示器列表、按显示器分辨率渲染、背景 / 叠加层拆分与导出逐像素一致、设置与桌面层清理。客户端自身：`cd client/windows && npm test && npm run smoke`；Windows 上再跑 `node test/windows.cjs`（真调用桥脚本并回查系统）。没有 Windows 机器时由 GitHub Actions 的 "Windows client" 工作流（`.github/workflows/windows.yml`）在 `windows-2025` / `windows-2022` 运行器上完成这三项并上传桌面截图与 x64 安装包。
+客户端模块回归：`node tools/verify-client.cjs`，用假的 `window.desktopRider` 验证显示器列表、按显示器分辨率渲染、背景 / 叠加层拆分与导出逐像素一致、设置与桌面层清理。客户端自身：`cd client/windows && npm test && npm run smoke`；Windows 上再跑 `node test/windows.cjs`（真调用桥脚本并回查系统）。没有 Windows 机器时由 GitHub Actions 的 "Windows client" 工作流（`.github/workflows/windows.yml`）在 `windows-2025` / `windows-2022` 运行器上完成这三项并上传桌面截图与 x64 安装包。 真机清单：`client/windows/REAL-DEVICE-TEST.md`。
 
 自由画布回归：`node tools/verify-canvas.cjs`，用纯色分区图检查弧形分割线把凸出处交给左侧、波浪与恢复直线，不露白限制（拖动只能向有画面的方向、滚轮缩不到分区以下、重新开启后回弹）与四种露白填充在预览画布和导出像素上的表现（含本机扩图完成后左上为红色纹理），分区换图 / 偏移 / 缩放在面板、拖动、滚轮与草稿中的表现，人物副本的旋转 / 色相 / 发光 / 不透明度在样式与导出中的体现、旋转圆点与角手柄、复制带外观，图层模块的形状与图片、拖动、滚轮、边手柄、旋转、混合模式、人物之上 / 之下、列表顺序、隐藏、刷新后恢复与删除。
 

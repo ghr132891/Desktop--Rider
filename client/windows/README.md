@@ -63,6 +63,8 @@ npm run dist
 
 ## 验证
 
+运行器测不到的部分（托盘、开机启动、锁屏 / 电池暂停、多显示器、性能）见 [REAL-DEVICE-TEST.md](REAL-DEVICE-TEST.md)，按编号在 Win11 真机上过一遍。
+
 ```bash
 npm test                # 单元测试（任何系统）
 npm run smoke           # Electron 启动烟测（任何系统）
