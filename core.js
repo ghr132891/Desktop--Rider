@@ -15,7 +15,7 @@ const Rider=(()=>{
  function on(event,fn){if(!handlers.has(event))handlers.set(event,new Set());handlers.get(event).add(fn);return()=>handlers.get(event).delete(fn);}
  function emit(event,payload){for(const fn of handlers.get(event)||[])try{fn(payload);}catch(error){console.error(`[${event}]`,error);}}
  // One module's error never stops the core or the other modules.
- function call(mod,hook,ctx){const fn=mod[hook];if(typeof fn!=='function')return;try{return fn.call(mod,ctx);}catch(error){console.error(`[module ${mod.id}] ${hook}`,error);}}
+ function call(mod,hook,ctx){const fn=mod[hook];if(typeof fn!=='function')return;try{const out=fn.call(mod,ctx);if(out&&typeof out.then==='function')return out.catch(error=>console.error(`[module ${mod.id}] ${hook}`,error));return out;}catch(error){console.error(`[module ${mod.id}] ${hook}`,error);}}
  function moduleDefaults(){return Object.fromEntries(modules.map(m=>[m.id,clone(m.defaults||{})]));}
  // Each module sanitises its own slice; unknown slices are kept so a module that is
  // temporarily not loaded does not lose its data.

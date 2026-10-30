@@ -44,7 +44,11 @@ python3 tools/serve.py
 - Wallpaper Engine 场景的「合成画面」只按位置、缩放、旋转和透明度把图片图层静态叠起来，不还原粒子、着色器特效、文字、脚本与音频；只有一个图片图层的场景直接给出该图层。支持内嵌 PNG / JPEG、原始 RGBA（含 LZ4）与 DXT1 / DXT3 / DXT5 纹理，RG88 / R8 这类遮罩通道会跳过。导入的画面压缩到最长边 2000px 存入浏览器。
 - 尚未实现多显示器、系统窗口吸附、开机启动、桌面图标接管。
 
-下一阶段需要先确认主平台（Windows 或 macOS），再实现原生桌面层、文件权限、显示器枚举与系统壁纸应用；浏览器界面和分裂几何逻辑可以继续复用。真实文件整理应优先使用快捷方式并保留可撤销记录。
+## Windows 客户端
+
+`client/windows/` 是 Electron 客户端（先适配 Windows 11，Windows 10 待实测），把网页原样装进去并加上系统能力：按每台显示器真实分辨率渲染并设为系统壁纸（`IDesktopWallpaper`，多显示器分别设置）；悬浮人物与桌面文字渲染成透明 PNG，由点击穿透的桌面层窗口显示在壁纸之上、图标之下（WorkerW / Progman 挂载）；托盘运行、开机启动并恢复桌面层。网页侧通过 `modules/client.js` 接入，只有在客户端内（存在 `window.desktopRider`）才出现「应用到桌面」视图。运行与打包、结构与边界见 `client/windows/README.md`。本仓库在 macOS 上开发，客户端只能在这里做单元测试和 Electron 启动烟测，系统壁纸与桌面层必须在 Windows 真机验证。
+
+真实文件整理仍未实现，应优先使用快捷方式并保留可撤销记录。
 
 ## 文件
 
@@ -52,6 +56,8 @@ python3 tools/serve.py
 - `styles.css`：工作台样式与响应式布局。
 - `core.js`：模块注册表、状态切片校验、事件与模块私有存储。
 - `modules/note.js`：示例模块「桌面文字」，也是新模块的模板。
+- `modules/client.js`：Windows 客户端内的「应用到桌面」模块（仅在客户端中注册）。
+- `client/windows/`：Electron 客户端（主进程、预加载桥、PowerShell 原生桥、桌面层页面、测试）。
 - `app.js`：裁切几何、壁纸渲染、交互、导入导出、本地存储；启动时挂载模块并提供 `Rider.api`。
 - `portrait.js`：人物保护、距离场、背景合成；预览与导出共用。
 - `person-worker.js`：在 Worker 中运行本地人物分割模型。
@@ -78,6 +84,8 @@ python3 tools/serve.py
 人物与分割交互回归：`node tools/verify-portrait.cjs`。普通模式和人物模式的测试与限制详见 `docs/portrait-algorithms.md`。
 
 人物悬浮与 Wallpaper Engine 导入回归：`node tools/verify-float.cjs`。覆盖自动抠图、背景补全、拖动 / 滚轮 / 键盘、导出位置、刷新恢复、点选添加 / 去除，以及用测试生成的 scene.pkg（内嵌 PNG、LZ4 原始 RGBA 与 DXT5 纹理，另含 DXT1 四色 / 三色块的逐像素校验）验证文件夹扫描和图层解码。
+
+客户端模块回归：`node tools/verify-client.cjs`，用假的 `window.desktopRider` 验证显示器列表、按显示器分辨率渲染、背景 / 叠加层拆分与导出逐像素一致、设置与桌面层清理。客户端自身：`cd client/windows && npm test && npm run smoke`。
 
 模块机制回归：`node tools/verify-modules.cjs`。覆盖示例模块的视图、控件、拖动、键盘、导出像素与持久化，状态校验，运行中注册模块与绘制顺序，处处抛错的模块不影响核心，以及事件、`api`、`storage`。
 

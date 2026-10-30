@@ -21,7 +21,7 @@ Rider.register({
 });
 ```
 
-所有钩子都可省略。钩子里抛出的错误只记录到控制台，不会打断核心和其他模块。
+所有钩子都可省略。钩子里抛出的错误（包括 async 钩子的 rejection）只记录到控制台，不会打断核心和其他模块。注意 `mount / sync / render / draw / onView / normalize` 是保留的钩子名，模块自己的辅助方法不要用这些名字（例如给单台显示器渲染的方法应叫 `renderFor`，不能叫 `render`）。
 
 ### 状态
 

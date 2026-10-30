@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>Desktop Rider 桌面层</title>
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}img{display:block;width:100vw;height:100vh;object-fit:fill;user-select:none;-webkit-user-drag:none}</style></head>
+<body><img id="overlay" alt="">
+<script>
+// Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1).
+// It only shows the overlay PNG the main window rendered: floating person copies and modules
+// drawn above the person. ?img=<file url>&v=<stamp> — the stamp defeats the image cache.
+const q=new URLSearchParams(location.search),img=document.getElementById('overlay');
+if(q.get('img'))img.src=q.get('img')+'#'+(q.get('v')||'');
+</script></body></html>

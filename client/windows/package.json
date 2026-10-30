@@ -1,0 +1,36 @@
+{
+  "name": "desktop-rider-windows",
+  "productName": "Desktop Rider",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "Desktop Rider",
+  "description": "Desktop Rider 的 Windows 客户端：把设计好的分裂壁纸应用到真正的桌面，悬浮人物与桌面文字作为桌面层窗口显示。",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "smoke": "node test/smoke.cjs",
+    "pack": "electron-builder --win --dir",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.desktoprider.windows",
+    "productName": "Desktop Rider",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "layer.html", "lib/**", "native/**", "assets/**", "!test/**"],
+    "extraResources": [
+      { "from": "../../", "to": "web", "filter": ["index.html", "styles.css", "core.js", "app.js", "cutout.js", "portrait.js", "inpaint-worker.js", "person-worker.js", "wallpaper-engine.js", "modules/**", "assets/**", "vendor/**"] }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "artifactName": "DesktopRider-${version}-${arch}.${ext}"
+    },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false }
+  }
+}

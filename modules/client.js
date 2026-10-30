@@ -1,0 +1,47 @@
+'use strict';
+// Desktop client module: present only inside the Windows client (client/windows), where
+// preload.js exposes window.desktopRider. Lists the monitors, renders the current design at
+// each monitor's real resolution — background for the system wallpaper, transparent overlay
+// for the desktop-layer window — and hands both to the client. Nothing is stored in the scheme.
+if(window.desktopRider)Rider.register({
+ id:'client',name:'应用到桌面',order:300,
+ view:{label:'应用到桌面',icon:'screen',title:'把设计放到真正的桌面上。',description:'按每台显示器的真实分辨率渲染，设为系统壁纸；悬浮人物与桌面文字作为桌面层显示在图标下方。',inspectorTitle:'显示器'},
+ monitors:[],busy:false,
+ mount({panel,api}){
+  this.api=api;
+  panel.innerHTML=`<p class="inspector-description">Desktop Rider 客户端 <span id="client-version"></span> · 点击某台显示器，当前设计会按它的分辨率渲染并应用。</p>
+<div id="client-monitors" class="client-monitors"></div>
+<button class="button primary full-width" id="client-apply-all">应用到所有显示器</button>
+<div class="switch-row"><div><label for="client-autostart">开机启动</label><small>登录后在托盘运行，并恢复桌面层</small></div><input type="checkbox" id="client-autostart" class="switch"></div>
+<p id="client-status" class="field-hint" role="status" aria-live="polite"></p>
+<button class="text-button" id="client-refresh"><svg><use href="#i-reset"/></svg>刷新显示器列表</button> <button class="text-button" id="client-clear">移除全部桌面层</button>`;
+  const $=q=>panel.querySelector(q);this.$=$;
+  $('#client-version').textContent='v'+(desktopRider.version||'');
+  $('#client-refresh').addEventListener('click',()=>this.refresh());
+  $('#client-apply-all').addEventListener('click',()=>this.applyAll());
+  $('#client-clear').addEventListener('click',async()=>{for(const m of this.monitors)await desktopRider.clearLayer(m.id).catch(()=>{});this.say('已移除全部桌面层');});
+  $('#client-autostart').addEventListener('change',async e=>{try{await desktopRider.setSettings({openAtLogin:e.target.checked});this.say(e.target.checked?'已设置开机启动':'已取消开机启动');}catch(error){this.say('设置失败：'+error.message);}});
+  desktopRider.onStatus(msg=>this.say(msg));
+  desktopRider.getSettings().then(s=>{$('#client-autostart').checked=!!s.openAtLogin;}).catch(()=>{});
+  this.refresh();
+ },
+ say(text){this.$('#client-status').textContent=text;},
+ async refresh(){
+  const root=this.$('#client-monitors');root.textContent='正在读取显示器…';
+  try{this.monitors=await desktopRider.monitors();}catch(error){this.monitors=[];root.textContent='';this.say('读取显示器失败：'+error.message);return;}
+  root.replaceChildren();
+  if(!this.monitors.length)root.textContent='没有找到显示器。';
+  this.monitors.forEach(m=>{const btn=document.createElement('button');btn.type='button';btn.className='client-monitor';btn.dataset.monitor=m.id;
+   const name=document.createElement('strong');name.textContent=`显示器 ${m.index+1}${m.primary?' · 主显示器':''}`;const size=document.createElement('span');size.textContent=`${m.width} × ${m.height}`;
+   btn.append(name,size);btn.addEventListener('click',()=>this.apply(m));root.append(btn);});
+ },
+ // Overlay only when something is drawn on it: sample the alpha channel on a coarse grid.
+ hasPixels(canvas){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;for(let i=3;i<d.length;i+=4*7)if(d[i])return true;return false;},
+ async renderFor(m){const api=this.api,s={...api.clone(api.state),aspect:m.width/m.height};const background=await api.wallpaperCanvas(s,m.width,{layers:'background'}),overlay=await api.wallpaperCanvas(s,m.width,{layers:'overlay'});
+  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null};},
+ async apply(m){if(this.busy)return;this.busy=true;this.$('#client-monitors').classList.add('busy');
+  try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
+  catch(error){this.say('应用失败：'+error.message);this.api.toast('应用失败：'+error.message);}
+  finally{this.busy=false;this.$('#client-monitors').classList.remove('busy');}},
+ async applyAll(){for(const m of this.monitors)await this.apply(m);}
+});
