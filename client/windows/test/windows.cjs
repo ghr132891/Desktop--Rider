@@ -89,7 +89,11 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   const applyPiece=async patch=>{await page.evaluate(patch=>{Object.assign(state.pieces[0],patch);update({custom:false});document.querySelector('#client-status').textContent='';},patch);
    await page.locator('.client-monitor').nth(primary.index).click();await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
    const st=await page.locator('#client-status').textContent();assert.match(st,/^已应用到/,st);const file=await bridge.getWallpaper(primary.id);return {file:path.basename(file),pixels:await strip(file),piece:await page.evaluate(()=>({cover:state.pieces[0].cover,dx:state.pieces[0].dx,fill:state.pieces[0].fill}))};};
-  const bare=await applyPiece({cover:false,dx:12,dy:0,zoom:100,fill:'gap'});log('bare strip · gap colour',bare);
+  // The shared picture is cover-fitted to the monitor, so how far it must move right before the piece's left edge is bare
+  // depends on the monitor's aspect: compute the offset that leaves a 15 %-wide strip at this monitor's size.
+  const push=await page.evaluate(async({w,h})=>{const s={...clone(state),aspect:w/h};s.pieces[0]={...s.pieces[0],cover:false,dx:0,dy:0,zoom:100};const img=await loadImage(source(s)),p=piecePlacement(s,img,w,h,geometry(s,w,h).polygons[0],0);return Math.round((w*.15-p.x)/w*1000)/10;},{w:primary.width,h:primary.height});
+  log('push for a 15% bare strip',{push});assert.ok(push>0&&push<=100,'the strip is reachable within the offset range: '+push);
+  const bare=await applyPiece({cover:false,dx:push,dy:0,zoom:100,fill:'gap'});log('bare strip · gap colour',bare);
   assert.ok(bare.pixels.every(isGap),'cover off + fill=gap: the left strip of the wallpaper Windows shows is the gap colour');
   const extended=await applyPiece({fill:'extend'});log('bare strip · 本机扩图',extended);
   assert.ok(extended.pixels.every(p=>p[3]===255&&!isGap(p)),'fill=extend: the strip is rebuilt from picture texture');
