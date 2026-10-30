@@ -63,8 +63,6 @@ namespace DesktopRider {
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
-    delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
-    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr lParam);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
     static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
     const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
