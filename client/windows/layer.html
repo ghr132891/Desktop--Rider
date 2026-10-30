@@ -1,20 +1,8 @@
 <!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><title>Desktop Rider 桌面层</title>
 <style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas,img{position:fixed;inset:0;display:block;width:100vw;height:100vh;user-select:none;-webkit-user-drag:none}canvas{z-index:1}img{z-index:2;object-fit:fill}
-/* 桌面歌词 — the same rules as styles.css in the web app, in px for this monitor */
-.lyrics-box{position:fixed;z-index:3;transform:translate(-50%,-50%);line-height:1.25;user-select:none;pointer-events:none;--lyr-dur:.5s;--lyr-next:.55;--lyr-stroke:transparent}
-.lyrics-box.shadow{text-shadow:0 .08em .3em #0b182c80}
-.lyrics-box.stroke .lyrics-line,.lyrics-box.stroke .lyrics-next,.lyrics-box.stroke .lyrics-trans{-webkit-text-stroke:.06em var(--lyr-stroke);paint-order:stroke fill}
-.lyrics-stage{position:relative;min-height:1.25em}
-.lyrics-line{position:absolute;left:0;right:0;top:0;opacity:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lyrics-line.in{opacity:1}
-.lyrics-box[data-transition=fade] .lyrics-line{transition:opacity var(--lyr-dur) ease}
-.lyrics-box[data-transition=slide] .lyrics-line{transition:opacity var(--lyr-dur) ease,transform var(--lyr-dur) ease;transform:translateY(.6em)}.lyrics-box[data-transition=slide] .lyrics-line.in{transform:none}.lyrics-box[data-transition=slide] .lyrics-line.out{transform:translateY(-.6em)}
-.lyrics-box[data-transition=blur] .lyrics-line{transition:opacity var(--lyr-dur) ease,filter var(--lyr-dur) ease;filter:blur(.25em)}.lyrics-box[data-transition=blur] .lyrics-line.in{filter:none}
-.lyrics-box[data-transition=none] .lyrics-line{transition:none}
-.lyrics-trans{font-size:.6em;opacity:.85;margin-top:.15em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lyrics-trans:empty,.lyrics-next:empty{display:none}
-.lyrics-next{font-size:.7em;opacity:var(--lyr-next);margin-top:.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style></head>
-<body><canvas id="live" hidden></canvas><img id="overlay" alt="" hidden><div id="lyrics" class="lyrics-box" hidden><div class="lyrics-stage"><div class="lyrics-line"></div><div class="lyrics-line"></div></div><div class="lyrics-trans"></div><div class="lyrics-next"></div></div>
+#lyrics{position:fixed;z-index:3;pointer-events:none}</style></head>
+<body><canvas id="live" hidden></canvas><img id="overlay" alt="" hidden><div id="lyrics" hidden></div>
 <script>
 // Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1).
 //   ?img=<file url>   transparent overlay PNG: floating person copies and modules drawn above the person
@@ -22,14 +10,14 @@
 //                     shared wallpaper video plays clipped to each wallpaper piece, exactly like the still pieces were cut
 //   ?clips=<json>     {width,height,still,items:[{video,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}]}
 //                     video layers (modules/layers.js), each painted per frame with its own transform, look and blend mode
-//   ?lyrics=<json>    {style:{x,y,width,size,font,weight,color,stroke,strokeColor,shadow,align,transition,duration,next,nextOpacity,trans,offset},lines:[{t,text,trans}]}
-//                     桌面歌词 (modules/lyrics.js); main.js then calls __setLyrics(...) when the words arrive and __setMedia(...)
+//   ?lyrics=<json>    {style:{…lyrics-view.js style in px…},lines:[…]} — 桌面歌词 (modules/lyrics.js), drawn by the shared
+//                     renderer lyrics-view.js (+ lyrics-view.css) that ?lib= and ?css= point at (file URLs into the web root).
+//                     main.js then calls __setLyrics({lines,source,words}) when the words arrive and __setMedia({position,playing})
 //                     with the player's position (system media session). Without a player the lines loop on an own clock.
 //   &v=<stamp>        defeats the image cache
 // Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas —
 // still wallpaper, live pieces, clips below the person, the overlay, clips above it — so blend modes have a backdrop.
-// Redraws happen only when a video presents a new frame (requestVideoFrameCallback) or an image finishes loading; a
-// 30 fps video therefore costs 30 draws a second, whatever the monitor's refresh rate.
+// Redraws happen only when a video presents a new frame (requestVideoFrameCallback) or an image finishes loading.
 // main.js calls window.__setPaused(paused, reason) from lib/power.js: desktop hidden by a window, lock screen,
 // battery, suspend. Paused videos present no frames and the lyrics clock stops, so nothing is drawn until resumed.
 const q=new URLSearchParams(location.search),img=document.getElementById('overlay'),canvas=document.getElementById('live');
@@ -76,24 +64,22 @@ else{
   window.__frames++;};
  schedule();
 }
-// ---- 桌面歌词 ----
+// ---- 桌面歌词 (shared renderer) ----
 const lyricsCfg=q.get('lyrics')?JSON.parse(q.get('lyrics')):null,box=document.getElementById('lyrics');
-window.__lyrics={lines:0,line:'',index:-1,media:null,provider:'',error:'',ticks:0};window.__setLyrics=()=>{};window.__setMedia=()=>{};
-if(lyricsCfg&&lyricsCfg.style){
- const st=lyricsCfg.style;let lines=Array.isArray(lyricsCfg.lines)?lyricsCfg.lines:[],media=null,slot=0,shownKey='',started=Date.now();
- Object.assign(box.style,{left:st.x+'px',top:st.y+'px',width:st.width+'px',fontSize:st.size+'px',fontFamily:st.font,fontWeight:st.weight,color:st.color,textAlign:st.align});
- box.style.setProperty('--lyr-dur',st.duration+'s');box.style.setProperty('--lyr-next',String(st.nextOpacity/100));box.style.setProperty('--lyr-stroke',st.stroke?st.strokeColor:'transparent');
- box.classList.toggle('shadow',!!st.shadow);box.classList.toggle('stroke',!!st.stroke);box.dataset.transition=st.transition;box.querySelector('.lyrics-next').hidden=!st.next;box.querySelector('.lyrics-trans').hidden=!st.trans;
- const slots=box.querySelectorAll('.lyrics-line');
- const show=i=>{const line=lines[i],key=(line?lines.indexOf(line)+'|'+line.text:'')+'|'+lines.length;if(key===shownKey)return;shownKey=key;
-  const next=slots[slot^=1],prev=slots[slot^1];next.textContent=line?.text||'';next.classList.remove('out','in');void next.offsetWidth;next.classList.add('in');prev.classList.remove('in');prev.classList.add('out');
-  box.querySelector('.lyrics-trans').textContent=line?.trans||'';box.querySelector('.lyrics-next').textContent=lines[i+1]?.text||'';window.__lyrics.line=line?.text||'';window.__lyrics.index=i;};
- const index=t=>{let i=-1;for(let k=0;k<lines.length;k++){if(lines[k].t<=t)i=k;else break;}return i;};
- // Player position when a media session reports one (interpolated while playing); otherwise an own clock that loops.
- const now=()=>{const off=Number(st.offset)||0;if(media){return media.position+(media.playing?(Date.now()-media.at)/1000:0)+off;}if(!lines.length)return 0;const span=lines[lines.length-1].t+3;return ((Date.now()-started)/1000)%span+off;};
- const tick=()=>{if(window.__paused)return;box.hidden=!lines.length;if(!lines.length)return;show(Math.max(0,index(now())));window.__lyrics.ticks++;};
- window.__setLyrics=({lines:l,provider,error}={})=>{lines=Array.isArray(l)?l:[];shownKey='';started=Date.now();window.__lyrics.lines=lines.length;window.__lyrics.provider=provider||'';window.__lyrics.error=error||'';tick();};
- window.__setMedia=m=>{media=m&&typeof m.position==='number'?{position:m.position,playing:!!m.playing,at:Date.now()}:null;window.__lyrics.media=media?{position:media.position,playing:media.playing}:null;tick();};
- setInterval(tick,100);tick();
+window.__lyrics={lines:0,line:'',index:-1,media:null,source:'',words:false,error:'',ticks:0,ready:false};window.__setLyrics=()=>{};window.__setMedia=()=>{};
+if(lyricsCfg&&lyricsCfg.style&&q.get('lib')){
+ if(q.get('css')){const link=document.createElement('link');link.rel='stylesheet';link.href=q.get('css');document.head.append(link);}
+ const script=document.createElement('script');script.src=q.get('lib');
+ script.onload=()=>{const LV=window.LyricsView,st=lyricsCfg.style;let lines=Array.isArray(lyricsCfg.lines)?lyricsCfg.lines:[],media=null,started=Date.now();
+  const view=LV.create(box);view.setStyle(st);view.setLines(lines);window.__lyrics.ready=true;window.__lyrics.lines=lines.length;
+  // Player position when a media session reports one (interpolated while playing); otherwise an own clock that loops.
+  const now=()=>{const off=Number(st.offset)||0;if(media)return media.position+(media.playing?(Date.now()-media.at)/1000:0)+off;if(!lines.length)return 0;const span=lines[lines.length-1].end+3;return ((Date.now()-started)/1000)%span+off;};
+  const tick=()=>{if(window.__paused)return;box.hidden=!lines.length;if(!lines.length)return;const t=now();view.render(t);window.__lyrics.index=view.current;window.__lyrics.line=lines[view.current]?.text||'';window.__lyrics.ticks++;};
+  let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop);};
+  pauseHooks.push(paused=>{cancelAnimationFrame(raf);if(!paused)raf=requestAnimationFrame(loop);});
+  window.__setLyrics=({lines:l,source,words,error}={})=>{lines=Array.isArray(l)?l:[];started=Date.now();view.setLines(lines);Object.assign(window.__lyrics,{lines:lines.length,source:source||'',words:!!words,error:error||''});tick();};
+  window.__setMedia=m=>{media=m&&typeof m.position==='number'?{position:m.position,playing:!!m.playing,at:Date.now()}:null;window.__lyrics.media=media?{position:media.position,playing:media.playing}:null;tick();};
+  if(!window.__paused)raf=requestAnimationFrame(loop);};
+ document.head.append(script);
 }
 </script></body></html>

@@ -21,7 +21,7 @@ const dataUrlToPng=url=>{const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.ex
 app.commandLine.appendSwitch('disable-renderer-backgrounding');app.commandLine.appendSwitch('disable-background-timer-throttling');app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion');
 const fileUrl=p=>require('node:url').pathToFileURL(p).href;
 const {checkLive,checkClips,checkLyrics}=require('./lib/live');
-const Lyrics=require('./lib/lyrics');
+const LyricsView=require(path.join(WEB_ROOT,'lyrics-view.js')),Lyrics=require('./lib/lyrics').use(LyricsView); // shared parser/renderer from the web root
 const {decide:decidePower}=require('./lib/power');
 
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -76,7 +76,7 @@ const mediaState={watcher:null,last:null};const lyricCache=new Map();
 const inLayer=(entry,code)=>{if(entry.window.isDestroyed())return;const wc=entry.window.webContents,send=()=>wc.executeJavaScript(code).catch(()=>{});if(wc.isLoading())wc.once('did-finish-load',send);else send();};
 const trackKey=m=>m&&m.sessions>0&&(m.title||m.artist)?`${m.title}\n${m.artist}`:'';
 function lyricsEntry(entry){if(!entry.lyrics){entry.lyricsState=null;mediaWatchSync();return;}
- const src=entry.lyrics.source;entry.lyricsState={track:null,playing:false,lines:src.mode==='manual'?Lyrics.parseLRC(src.lrc).length:0,source:src.mode==='manual'?'manual':'',error:'',key:''};
+ const src=entry.lyrics.source,manual=src.mode==='manual'?LyricsView.parse(src.lrc):[];entry.lyricsState={track:null,playing:false,lines:manual.length,source:src.mode==='manual'?'manual':'',words:manual.some(l=>l.words),error:'',key:''};
  mediaWatchSync();if(mediaState.last)onMedia(mediaState.last);}
 function mediaWatchSync(){const need=[...layers.values()].some(e=>e.lyrics);
  if(need&&!mediaState.watcher&&process.platform==='win32')mediaState.watcher=native.watchMedia(onMedia);
@@ -91,9 +91,9 @@ function onMedia(m){mediaState.last=m;const key=trackKey(m);
    fetchLyrics(entry,key,{title:m.title||'',artist:m.artist||'',duration:m.duration||0,query:src.query},src.provider);}}}
 async function fetchLyrics(entry,key,want,provider){const st=entry.lyricsState,cacheKey=provider+'|'+(want.query||key);
  try{let hit=lyricCache.get(cacheKey);if(!hit){hit=Lyrics.findLyrics(want,{provider});lyricCache.set(cacheKey,hit);if(lyricCache.size>40)lyricCache.delete(lyricCache.keys().next().value);}
-  const found=await hit;if(st.key!==key||entry.window.isDestroyed())return;st.lines=found.lines.length;st.source=found.provider;st.error='';
-  inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:found.lines,provider:found.provider})})`);}
- catch(error){lyricCache.delete(cacheKey);if(st.key!==key)return;st.lines=0;st.source='';st.error=error.message||'歌词获取失败';inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:[],error:st.error})})`);}}
+  const found=await hit;if(st.key!==key||entry.window.isDestroyed())return;st.lines=found.lines.length;st.source=found.provider;st.words=!!found.words;st.error='';
+  inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:found.lines,source:found.provider,words:!!found.words})})`);}
+ catch(error){lyricCache.delete(cacheKey);if(st.key!==key)return;st.lines=0;st.source='';st.words=false;st.error=error.message||'歌词获取失败';inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:[],error:st.error})})`);}}
 function watchPower(){power.onBattery=powerMonitor.isOnBatteryPower();
  powerMonitor.on('lock-screen',()=>{power.locked=true;powerAll();});powerMonitor.on('unlock-screen',()=>{power.locked=false;powerAll();});
  powerMonitor.on('on-battery',()=>{power.onBattery=true;powerAll();});powerMonitor.on('on-ac',()=>{power.onBattery=false;powerAll();});
@@ -145,7 +145,7 @@ async function showLayer(monitorId,monitor,content,stamp){
  if(entry.overlay)url+='&img='+encodeURIComponent(fileUrl(entry.overlay));
  if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),still:entry.live.still?fileUrl(entry.live.still):null,plan:entry.live.plan}));
  if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?fileUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:fileUrl(c.video)}))}));
- if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?Lyrics.parseLRC(entry.lyrics.source.lrc):[]}));
+ if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?LyricsView.parse(entry.lyrics.source.lrc):[]}))+'&lib='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'lyrics-view.js')))+'&css='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'lyrics-view.css')));
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
@@ -175,7 +175,7 @@ ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
-ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?Lyrics.parseLRC(e.lyrics.source.lrc).length:0,source:'',error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?LyricsView.parse(e.lyrics.source.lrc).length:0,source:'',words:false,error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:get-settings',()=>settings);
 ipcMain.handle('client:set-settings',(e,patch)=>setSettings(patch));
 process.on('unhandledRejection',error=>{console.error(error);if(mainWindow&&!mainWindow.isDestroyed())status('出错：'+(error?.message||error));});

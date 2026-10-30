@@ -91,7 +91,7 @@ test('covering watcher: bridge arguments and line parsing',()=>{
 });
 
 test('lyrics: LRC parsing, matching and the two providers through a fake fetch',async()=>{
- const L=require('../lib/lyrics');
+ const L=require('../lib/lyrics').use(require('../../../lyrics-view.js'));
  assert.deepEqual(L.parseLRC('[ti:x]\n[00:01.50][00:03.25]同一句\n[00:02.000]第二句').map(l=>[l.t,l.text]),[[1.5,'同一句'],[2,'第二句'],[3.25,'同一句']]);
  assert.deepEqual(L.mergeTrans([{t:2,text:'a'}],[{t:2.1,text:'A'}]),[{t:2,text:'a',trans:'A'}]);
  assert.equal(L.clean('晴天 (Live) - Remix【官方】'),'晴天');
@@ -101,14 +101,15 @@ test('lyrics: LRC parsing, matching and the two providers through a fake fetch',
  const fetch=async(url)=>{calls.push(url);const body=url.includes('music.163.com/api/search')?{result:{songs:[{id:9,name:'晴天',artists:[{name:'周杰伦'}],duration:269000}]}}
   :url.includes('music.163.com/api/song/lyric')?{lrc:{lyric:'[00:01.00]故事的小黄花\n[00:04.00]从出生那年就飘着'},tlyric:{lyric:'[00:01.00]little flower'}}
   :url.includes('client_search_cp')?'MusicJsonCallback({"data":{"song":{"list":[{"mid":"m1","name":"晴天","singer":[{"name":"周杰伦"}],"interval":269}]}}})'
+  :url.includes('musicu.fcg')?{code:0,req:{code:0,data:{songID:0,qrc:0,crypt:0,lyric:''}}}
   :url.includes('fcg_query_lyric_new')?{lyric:b64('[00:02.00]QQ 第一句'),trans:b64('[00:02.00]first')}:null;
   return {json:async()=>body,text:async()=>typeof body==='string'?body:JSON.stringify(body)};};
- const ne=await L.findLyrics({title:'晴天',artist:'周杰伦',duration:269},{fetch});
- assert.equal(ne.provider,'netease');assert.equal(ne.id,'9');assert.deepEqual(ne.lines[0],{t:1,text:'故事的小黄花',trans:'little flower'});assert.equal(ne.lines.length,2);
- const qq=await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch,provider:'qq'});assert.equal(qq.provider,'qq');assert.deepEqual(qq.lines,[{t:2,text:'QQ 第一句',trans:'first'}]);
- // auto: 网易云 has nothing → QQ音乐 answers; an explicit query takes the first hit.
- const empty=async(url)=>url.includes('music.163.com')?{json:async()=>({result:{songs:[]}}),text:async()=>'{}'}:fetch(url);
- assert.equal((await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch:empty})).provider,'qq');
+ const ne=await L.findLyrics({title:'晴天',artist:'周杰伦',duration:269},{fetch,provider:'netease'});
+ assert.equal(ne.provider,'netease');assert.equal(ne.id,'9');assert.deepEqual(ne.lines[0],{t:1,text:'故事的小黄花',end:4,trans:'little flower'});assert.equal(ne.lines.length,2);
+ const qq=await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch,provider:'qq'});assert.equal(qq.provider,'qq');assert.deepEqual(qq.lines,[{t:2,text:'QQ 第一句',end:7,trans:'first'}]);
+ // auto: QQ音乐 first; when it has nothing, 网易云 answers; an explicit query takes the first hit.
+ const noqq=async(url,o)=>url.includes('qq.com')?{json:async()=>({}),text:async()=>'{"data":{"song":{"list":[]}}}'}:fetch(url,o);
+ assert.equal((await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch:noqq})).provider,'netease');assert.equal((await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch})).provider,'qq');
  assert.equal((await L.findLyrics({title:'x',artist:'y',query:'晴天 周杰伦'},{fetch,provider:'netease'})).id,'9');
  await assert.rejects(L.findLyrics({title:'夜曲',artist:'周杰伦'},{fetch,provider:'netease'}),/没有匹配/);
  await assert.rejects(L.findLyrics({title:'',artist:''},{fetch}),/没有可搜索/);
@@ -117,10 +118,30 @@ test('lyrics: LRC parsing, matching and the two providers through a fake fetch',
 
 test('lyrics payload is validated before it reaches the layer window',()=>{
  const {checkLyrics}=require('../lib/live');
- const style={x:960,y:840,width:1536,size:64.8,font:'"Microsoft YaHei"',weight:600,color:'#FFFFFF',stroke:true,strokeColor:'#1b2a3f',shadow:true,align:'center',transition:'fade',duration:.5,next:true,nextOpacity:55,trans:true};
+ const style={left:'960px',top:'840px',width:'1536px',size:64.8,font:'"Microsoft YaHei"',weight:600,color:'#FFFFFF',highlight:'#FFD166',glow:40,stroke:true,strokeColor:'#1b2a3f',shadow:true,backdrop:30,backdropBlur:12,align:'center',display:'karaoke',stageLines:5,transition:'emerge',duration:.5,next:true,nextOpacity:55,trans:true,interlude:false};
  assert.equal(checkLyrics(null),null);assert.equal(checkLyrics(undefined),null);
  const ok=checkLyrics({source:{mode:'manual',provider:'qq',lrc:'[00:01.00]a',offset:.5},style});
- assert.equal(ok.source.mode,'manual');assert.equal(ok.source.provider,'qq');assert.equal(ok.style.color,'#ffffff');assert.equal(ok.style.offset,.5);assert.equal(ok.style.stroke,true);
- assert.equal(checkLyrics({style}).source.mode,'auto');
- assert.throws(()=>checkLyrics({style:{...style,transition:'zoom'}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,size:0}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,color:'red'}}),/样式/);assert.throws(()=>checkLyrics('x'),/无效/);
+ assert.equal(ok.source.mode,'manual');assert.equal(ok.source.provider,'qq');assert.equal(ok.style.color,'#ffffff');assert.equal(ok.style.highlight,'#ffd166');assert.equal(ok.style.offset,.5);assert.equal(ok.style.display,'karaoke');assert.equal(ok.style.stageLines,5);assert.equal(ok.style.interlude,false);assert.equal(ok.style.left,'960px');
+ assert.equal(checkLyrics({style}).source.mode,'auto');assert.equal(checkLyrics({style:{...style,display:undefined,highlight:undefined}}).style.display,'single');
+ assert.throws(()=>checkLyrics({style:{...style,transition:'zoom'}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,size:0}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,color:'red'}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,left:'abc'}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,display:'wall'}}),/样式/);assert.throws(()=>checkLyrics('x'),/无效/);
+});
+
+test('QRC: QQ\'s DES variant matches the reference vectors; a round trip through encrypt → decrypt → inflate → parse yields word timing',()=>{
+ const Q=require('../lib/qrc'),zlib=require('node:zlib'),LV=require('../../../lyrics-view.js');
+ const enc=Buffer.from([0xFD,0x0E,0x64,0x06,0x65,0xBE,0x74,0x13,0x77,0x63,0x3B,0x02,0x45,0x4E,0x70,0x7A]),plain=Buffer.from([1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6]);
+ assert.deepEqual(Q.des(Buffer.from(enc),'TEST!KEY',true),plain);assert.deepEqual(Q.des(Buffer.from(plain),'TEST!KEY',false),enc);
+ // Build an encrypted payload the way QQ would: deflate, then the three passes in reverse (encrypt key3, decrypt key2, encrypt key1).
+ const xml='<?xml version="1.0" encoding="utf-8"?>\n<QrcInfos><LyricInfo LyricCount="1"><Lyric_1 LyricType="1" LyricContent="[ti:测试]&#10;[1000,2000]晴(1000,500)天(1500,500) (2000,100)Jay(2100,900)&#10;[4000,1000]第二句(4000,1000)"/></LyricInfo></QrcInfos>';
+ let buf=zlib.deflateSync(Buffer.from(xml,'utf8'));const pad=(8-buf.length%8)%8;buf=Buffer.concat([buf,Buffer.alloc(pad)]);
+ Q.des(buf,'!@#)(*$%',true);Q.des(buf,'123ZXC!@',false);Q.des(buf,'!@#)(NHL',true);
+ const text=Q.lyricContent(Q.decryptQRC(buf.toString('hex')));assert.ok(text.startsWith('[ti:测试]\n[1000,2000]'),text.slice(0,40));
+ const lines=LV.parse(text);assert.equal(LV.detect(text),'qrc');assert.equal(lines.length,2);assert.equal(lines[0].text,'晴天 Jay');assert.deepEqual(lines[0].words.map(w=>[w.t,w.d,w.text]),[[1,.5,'晴'],[1.5,.5,'天'],[2,.1,' '],[2.1,.9,'Jay']]);assert.equal(lines[0].end,3);assert.equal(lines[1].words.length,1);
+ assert.equal(LV.wordProgress(lines[0].words[0],1.25),.5);assert.equal(LV.progress(lines[0],3),1);assert.equal(LV.progress(lines[0],2),.5);
+ // YRC and the QQ provider with an encrypted hex payload through a fake fetch.
+ const yrc=LV.parse('{"t":0,"c":[{"tx":"作词: 某某"}]}\n[11700,1410](11700,510,0)Let (12210,390,0)me (12600,510,0)go');assert.equal(LV.detect('[1,2](1,2,0)x'),'yrc');assert.deepEqual(yrc[0].words.map(w=>w.text),['Let ','me ','go']);assert.equal(yrc[0].text,'Let me go');
+ const L=require('../lib/lyrics').use(LV);
+ const fetch=async(url,o)=>{if(url.includes('client_search_cp'))return {text:async()=>JSON.stringify({data:{song:{list:[{mid:'m9',id:97773,name:'晴天',singer:[{name:'周杰伦'}],interval:269}]}}})};
+  if(url.includes('musicu.fcg')){assert.equal(o.method,'POST');const body=JSON.parse(o.body);assert.equal(body.req.param.songID,97773);assert.equal(body.req.param.qrc,1);return {text:async()=>JSON.stringify({code:0,req:{code:0,data:{songID:97773,qrc:1,crypt:1,lyric:buf.toString('hex'),trans:''}}})};}
+  throw new Error('unexpected '+url);};
+ return L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch,provider:'qq'}).then(r=>{assert.equal(r.provider,'qq');assert.equal(r.words,true);assert.equal(r.lines.length,2);assert.equal(r.lines[0].words[3].text,'Jay');});
 });

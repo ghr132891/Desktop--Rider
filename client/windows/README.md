@@ -38,14 +38,15 @@ npm run dist
 | `lib/server.js` | 回环静态服务器，只服务网页根目录，拒绝越界路径 |
 | `lib/native.js` | 调起 `native/bridge.ps1` 并解析 JSON；参数全部作为 PowerShell 参数传递，不拼接字符串 |
 | `native/bridge.ps1` | Windows PowerShell 5.1 脚本，`Add-Type` 内嵌 C#：`IDesktopWallpaper`（枚举显示器、设壁纸）、`EnumDisplaySettings`（物理分辨率与位置，不受 DPI 虚拟化影响）、WorkerW 查找、`SetParent` / `SetWindowPos`、线程级每显示器 DPI 感知 |
-| `layer.html` | 桌面层窗口页面：`?img=` 透明叠加 PNG；`?live=` 时按几何方案播放分区视频；`?clips=` 时逐帧绘制图层视频（位置、旋转、翻转、圆角、滤镜、混合模式、人物上下）；`?lyrics=` 时按样式显示桌面歌词（主进程通过 `__setLyrics` / `__setMedia` 推送歌词与播放位置）。只要有视频，整页就在一块 canvas 上合成 |
+| `layer.html` | 桌面层窗口页面：`?img=` 透明叠加 PNG；`?live=` 时按几何方案播放分区视频；`?clips=` 时逐帧绘制图层视频（位置、旋转、翻转、圆角、滤镜、混合模式、人物上下）；`?lyrics=` 时用 `?lib=` / `?css=` 指向的共享渲染器 `lyrics-view.js` / `lyrics-view.css`（网页根目录，打包时随 web 资源一起）显示桌面歌词，主进程通过 `__setLyrics` / `__setMedia` 推送歌词与播放位置。只要有视频，整页就在一块 canvas 上合成 |
 | `lib/power.js` | 桌面层视频的节能决策（纯函数）：锁屏、休眠始终暂停；桌面被全屏 / 最大化窗口遮住、电池供电时按「节能暂停」设置暂停 |
-| `lib/lyrics.js` | 桌面歌词：LRC 解析、曲目匹配，以及网易云音乐 / QQ音乐的公开搜索与歌词接口（非官方、无需登录，接口可能变动；`fetch` 可注入以便单元测试） |
+| `lib/lyrics.js` | 桌面歌词：曲目匹配，以及 QQ音乐（`musicu.fcg` GetPlayLyricInfo 的逐字 QRC，回退到 base64 LRC 接口）与网易云音乐（逐行 LRC + 翻译）的公开接口（非官方、无需登录，接口可能变动；`fetch` 可注入以便单元测试）；解析交给网页根目录的 `lyrics-view.js`，预览与桌面层解析结果一致 |
+| `lib/qrc.js` | QQ音乐 QRC 逐字歌词解密：QQ 自己的 DES 变体（两处 S 盒与标准不同，普通 3DES 库解不出）三趟 ECB + zlib，移植自开源实现并用其测试向量核对；单元测试里再做加密 → 解密 → 解析的闭环 |
 | `lib/live.js` | 校验网页侧发来的动态壁纸数据（视频字节、容器类型、每块分区的多边形与目标矩形） |
 | `../../modules/client.js` | 网页侧模块，只有在 `window.desktopRider` 存在时注册 |
 | `test/lib.test.cjs` | 单元测试（任何系统）：参数构造、句柄转换、JSON 解析、静态服务器 |
 | `test/smoke.cjs` | 用 Playwright 启动真实 Electron：页面加载、桥存在、显示器列表、非 Windows 下应用失败并提示 |
-| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再把左侧分区画面推出露白，分别以间隙色、本机扩图、重新开启不露白应用，用 `nativeImage` 读系统正在显示的 PNG 左缘像素核对填充结果；再录一段颜色循环的 WebM 加为人物之上的视频图层并应用，读层窗口画布确认图层中心逐帧变化、旁边壁纸不变；再把主窗口最大化遮住桌面，确认层窗口被判定为 covered、所有视频暂停且画布不再重绘，还原窗口后恢复播放；再启用手动 LRC 的桌面歌词并应用，读层窗口 DOM 确认三句按自身时钟循环、字号为显示器高度的 5%、颜色正确（运行器没有媒体会话，跟随播放的路径见真机清单）；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
+| `test/windows.cjs` | 仅 Windows：真实调用 `bridge.ps1`，应用到主显示器后用 `IDesktopWallpaper` 与 Win32 回查壁纸文件、桌面层窗口的父窗口与矩形；再把左侧分区画面推出露白，分别以间隙色、本机扩图、重新开启不露白应用，用 `nativeImage` 读系统正在显示的 PNG 左缘像素核对填充结果；再录一段颜色循环的 WebM 加为人物之上的视频图层并应用，读层窗口画布确认图层中心逐帧变化、旁边壁纸不变；再把主窗口最大化遮住桌面，确认层窗口被判定为 covered、所有视频暂停且画布不再重绘，还原窗口后恢复播放；再启用手动 QRC 歌词（卡拉 OK 模式）并应用，读层窗口 DOM 确认共享渲染器与样式表已从 web 根加载、三句按自身时钟循环、某个字处于逐字填充中、字号为显示器高度的 5%、颜色与点亮色正确（运行器没有媒体会话，跟随播放的路径见真机清单）；再导入页面内录制的 WebM 作为动态壁纸，确认层窗口真的在解码并逐帧绘制，重启后恢复并继续播放，清理、还原原壁纸；整屏截图与 `report.json` 写到 `test/out/` |
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 

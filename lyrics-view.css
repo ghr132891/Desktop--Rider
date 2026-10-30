@@ -1,0 +1,44 @@
+/* 桌面歌词 (lyrics-view.js) — shared by the web preview and the Windows desktop layer. The box sits at (left,top)
+   centre; font/size/colour come from the host. Variables: --lyr-dur transition, --lyr-hl highlight colour,
+   --lyr-glow 0–1, --lyr-next next-line opacity, --lyr-stroke, --lyr-backdrop 0–1, --lyr-backdrop-blur. */
+.lyrics-box{position:absolute;transform:translate(-50%,-50%);line-height:1.25;user-select:none;--lyr-dur:.5s;--lyr-next:.55;--lyr-stroke:transparent;--lyr-hl:currentColor;--lyr-glow:0;--lyr-backdrop:0;--lyr-backdrop-blur:12px}
+.lyrics-box.shadow{text-shadow:0 .08em .3em #0b182c80}
+.lyrics-box.stroke .lyrics-line,.lyrics-box.stroke .lyrics-next,.lyrics-box.stroke .lyrics-trans,.lyrics-box.stroke .lyrics-row{-webkit-text-stroke:.06em var(--lyr-stroke);paint-order:stroke fill}
+/* soft pill behind the words */
+.lyrics-backdrop{position:absolute;inset:-.35em -.8em;border-radius:1em;background:rgba(10,18,32,var(--lyr-backdrop));backdrop-filter:blur(var(--lyr-backdrop-blur));-webkit-backdrop-filter:blur(var(--lyr-backdrop-blur));opacity:1;pointer-events:none;z-index:-1}
+.lyrics-box[style*="--lyr-backdrop:0;"] .lyrics-backdrop,.lyrics-box[style*="--lyr-backdrop: 0;"] .lyrics-backdrop{display:none}
+/* single / karaoke: two slots cross-fade */
+.lyrics-stage{position:relative;min-height:1.25em}
+.lyrics-box[data-display=stage] .lyrics-stage,.lyrics-box[data-display=stage] .lyrics-next{display:none}
+.lyrics-line{position:absolute;left:0;right:0;top:0;opacity:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyrics-line.in{opacity:1}
+.lyrics-box[data-transition=fade] .lyrics-line{transition:opacity var(--lyr-dur) ease}
+.lyrics-box[data-transition=slide] .lyrics-line{transition:opacity var(--lyr-dur) ease,transform var(--lyr-dur) ease;transform:translateY(.6em)}.lyrics-box[data-transition=slide] .lyrics-line.in{transform:none}.lyrics-box[data-transition=slide] .lyrics-line.out{transform:translateY(-.6em)}
+.lyrics-box[data-transition=blur] .lyrics-line{transition:opacity var(--lyr-dur) ease,filter var(--lyr-dur) ease;filter:blur(.25em)}.lyrics-box[data-transition=blur] .lyrics-line.in{filter:none}
+.lyrics-box[data-transition=none] .lyrics-line{transition:none}
+/* emerge: words rise in one after another */
+.lyrics-box[data-transition=emerge] .lyrics-line{transition:opacity calc(var(--lyr-dur)*.5) ease}
+.lyrics-box[data-transition=emerge] .lyrics-line.in .lw{animation:lyr-emerge var(--lyr-dur) cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i)*var(--lyr-dur)*.12)}
+@keyframes lyr-emerge{from{opacity:0;transform:translateY(.5em);filter:blur(.15em)}to{opacity:1;transform:none;filter:none}}
+.lw{display:inline-block;white-space:pre}
+/* karaoke / stage word fill: highlight colour up to --p, base colour after */
+.lyrics-box[data-display=karaoke] .lw,.lyrics-box[data-display=stage] .lw{color:transparent;-webkit-text-stroke-color:var(--lyr-stroke);background-image:linear-gradient(90deg,var(--lyr-hl) calc(var(--p)*100%),color-mix(in srgb,currentColor 45%,transparent) calc(var(--p)*100%));-webkit-background-clip:text;background-clip:text}
+.lyrics-box[data-display=karaoke] .lw.active,.lyrics-box[data-display=stage] .current .lw.active{filter:drop-shadow(0 0 calc(var(--lyr-glow)*.35em) var(--lyr-hl))}
+.lyrics-box.shadow[data-display=karaoke] .lyrics-line,.lyrics-box.shadow[data-display=stage] .lyrics-row{text-shadow:none;filter:drop-shadow(0 .08em .25em #0b182c80)}
+.lyrics-trans{font-size:.6em;opacity:.85;margin-top:.15em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lyrics-trans:empty,.lyrics-next:empty{display:none}
+.lyrics-next{font-size:.7em;opacity:var(--lyr-next);margin-top:.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* stage: rows around the current line, springy ease */
+.lyrics-rows{display:none;position:relative;height:1.25em}
+.lyrics-box[data-display=stage] .lyrics-rows{display:block}
+.lyrics-row{position:absolute;left:0;right:0;top:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform-origin:center;transform:translateY(calc(var(--d)*1.55em)) scale(.78);opacity:calc(.55 - var(--ad)*.15);filter:blur(calc(var(--ad)*.06em));transition:transform var(--lyr-dur) cubic-bezier(.22,1.2,.36,1),opacity var(--lyr-dur) ease,filter var(--lyr-dur) ease}
+.lyrics-row.current{transform:translateY(0) scale(1);opacity:1;filter:none}
+.lyrics-row.enter{opacity:0}
+.lyrics-row small{display:block;font-size:.55em;opacity:.8}
+.lyrics-row:not(.current) small{display:none}
+.lyrics-box[data-display=stage][data-stage="5"] .lyrics-row{transform:translateY(calc(var(--d)*1.45em)) scale(.72)}
+.lyrics-box[data-display=stage][data-stage="5"] .lyrics-row.current{transform:none}
+/* interlude dots fill one after another and breathe */
+.lyrics-dots{display:flex;gap:.3em;justify-content:center;margin-top:.3em;animation:lyr-breathe 2.4s ease-in-out infinite}
+.lyrics-dots[hidden]{display:none}
+.lyrics-dots i{width:.4em;height:.4em;border-radius:50%;background:linear-gradient(90deg,var(--lyr-hl) calc(var(--p)*100%),color-mix(in srgb,currentColor 35%,transparent) calc(var(--p)*100%))}
+@keyframes lyr-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}

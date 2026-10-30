@@ -41,6 +41,8 @@
         "filter": [
           "index.html",
           "styles.css",
+        "lyrics-view.js",
+        "lyrics-view.css",
           "core.js",
           "app.js",
           "cutout.js",
