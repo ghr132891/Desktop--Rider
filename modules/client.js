@@ -22,6 +22,8 @@ if(window.desktopRider)Rider.register({
   $('#client-clear').addEventListener('click',async()=>{for(const m of this.monitors)await desktopRider.clearLayer(m.id).catch(()=>{});this.say('已移除全部桌面层');});
   $('#client-autostart').addEventListener('change',async e=>{try{await desktopRider.setSettings({openAtLogin:e.target.checked});this.say(e.target.checked?'已设置开机启动':'已取消开机启动');}catch(error){this.say('设置失败：'+this.reason(error));}});
   desktopRider.onStatus(msg=>this.say(msg));
+  // 桌面歌词 status line: what the layer window is playing / where the words came from, every 2 s while that view or this one is open.
+  setInterval(async()=>{const lyr=Rider.modules.find(x=>x.id==='lyrics');if(!lyr||typeof lyr.setClientState!=='function'||!['lyrics','client'].includes(api.view))return;try{const l=await desktopRider.layers();lyr.setClientState(l.find(x=>x.lyrics)?.lyrics||null);}catch{}},2000);
   $('#client-powersave').addEventListener('change',async e=>{try{await desktopRider.setSettings({powerSave:e.target.checked});this.say(e.target.checked?'已开启节能暂停':'已关闭节能暂停');}catch(error){this.say('设置失败：'+this.reason(error));}});
   desktopRider.getSettings().then(s=>{$('#client-autostart').checked=!!s.openAtLogin;$('#client-powersave').checked=s.powerSave!==false;}).catch(()=>{});
   this.refresh();
@@ -45,7 +47,9 @@ if(window.desktopRider)Rider.register({
   const liveModule=Rider.modules.find(x=>x.id==='live'),live=liveModule&&typeof liveModule.exportFor==='function'?await liveModule.exportFor(s,m.width,m.height):null;
   // Video layers (modules/layers.js) play in the layer window too: the files plus their frames / looks at this monitor's size.
   const layersModule=Rider.modules.find(x=>x.id==='layers'),clips=layersModule&&typeof layersModule.exportClips==='function'?await layersModule.exportClips(s,m.width,m.height):[];
-  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null,live,clips};},
+  // 桌面歌词 (modules/lyrics.js): style in px for this monitor plus how to find the words; null when off.
+  const lyricsModule=Rider.modules.find(x=>x.id==='lyrics'),lyrics=lyricsModule&&typeof lyricsModule.exportLyrics==='function'?lyricsModule.exportLyrics(s,m.width,m.height):null;
+  return {monitorId:m.id,background:background.toDataURL('image/png'),overlay:this.hasPixels(overlay)?overlay.toDataURL('image/png'):null,live,clips,lyrics};},
  async apply(m){if(this.busy)return;this.busy=true;this.$('#client-monitors').classList.add('busy');
   try{this.say(`正在按 ${m.width} × ${m.height} 渲染…`);const result=await desktopRider.applyWallpaper(await this.renderFor(m));this.say(`已应用到显示器 ${m.index+1}${result.live?'（动态壁纸）':result.clips?'（含动态图层）':result.layer?'（含桌面层）':''}`);this.api.toast('壁纸已应用到显示器 '+(m.index+1));}
   catch(error){const why=this.reason(error);this.say('应用失败：'+why);this.api.toast('应用失败：'+why);}

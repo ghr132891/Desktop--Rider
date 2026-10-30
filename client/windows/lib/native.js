@@ -30,6 +30,10 @@ function create({runner=defaultRunner,spawner=defaultSpawner,platform=process.pl
   getWallpaper:monitorId=>run('get-wallpaper',{monitorId}).then(r=>r.path||''),
   layerInfo:hwnd=>run('layer-info',{hwnd}),
   covering:(hwnd,rect)=>run('covering',{hwnd,left:rect.left,top:rect.top,width:rect.width,height:rect.height}),
+  media:()=>run('media'),
+  // System media session (SMTC) watcher: onState gets {sessions,playing,status,app,title,artist,album,position,duration,updated} on change.
+  watchMedia(onState){if(platform!=='win32')return {stop(){}};const child=spawner(args('watch-media'));
+   child.stdout.on('data',lineReader(line=>{try{onState(JSON.parse(line));}catch{}}));child.stderr?.on('data',()=>{});child.on('error',()=>{});return {stop(){try{child.kill();}catch{}}};},
   // Keeps one bridge process alive that reports whether the monitor's desktop is hidden by a window; onState gets each
   // change as {covered, hwnd?, class?, zoomed?, …}. Returns {stop()}. No-op off Windows.
   watchCovering(hwnd,rect,onState){if(platform!=='win32')return {stop(){}};

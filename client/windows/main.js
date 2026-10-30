@@ -20,7 +20,8 @@ const dataUrlToPng=url=>{const m=/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.ex
 // backgrounded and stop painting the live wallpaper.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');app.commandLine.appendSwitch('disable-background-timer-throttling');app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion');
 const fileUrl=p=>require('node:url').pathToFileURL(p).href;
-const {checkLive,checkClips}=require('./lib/live');
+const {checkLive,checkClips,checkLyrics}=require('./lib/live');
+const Lyrics=require('./lib/lyrics');
 const {decide:decidePower}=require('./lib/power');
 
 if(!app.requestSingleInstanceLock()){app.quit();}
@@ -60,7 +61,7 @@ function applyLoginItem(){if(process.platform==='win32'||process.platform==='dar
 async function setSettings(patch){if(patch&&typeof patch.openAtLogin==='boolean')settings.openAtLogin=patch.openAtLogin;if(patch&&typeof patch.powerSave==='boolean')settings.powerSave=patch.powerSave;await writeJson(SETTINGS,settings);applyLoginItem();powerAll();return settings;}
 // ---- power saving for the layer videos (lib/power.js decides; layer.html pauses) ----
 const power={locked:false,onBattery:false,suspended:false};
-const hasVideo=e=>!!(e.live||(e.clips&&e.clips.length));
+const hasVideo=e=>!!(e.live||(e.clips&&e.clips.length)||e.lyrics); // anything that moves on its own → power rules apply
 function applyPower(entry){const d=decidePower({suspended:power.suspended,locked:power.locked,covered:!!entry.covered,onBattery:power.onBattery,powerSave:settings.powerSave!==false});
  const paused=hasVideo(entry)&&d.paused,reason=paused?d.reason:'';if(entry.paused===paused&&entry.pauseReason===reason)return;entry.paused=paused;entry.pauseReason=reason;
  if(entry.window.isDestroyed())return;const wc=entry.window.webContents,send=()=>wc.executeJavaScript(`window.__setPaused&&window.__setPaused(${paused},${JSON.stringify(reason)})`).catch(()=>{});
@@ -70,6 +71,29 @@ function powerAll(){for(const e of layers.values())applyPower(e);}
 function watchEntry(entry){entry.watcher?.stop();entry.watcher=null;entry.covered=false;entry.covering=null;
  if(hasVideo(entry)&&!entry.window.isDestroyed()&&process.platform==='win32')entry.watcher=native.watchCovering(hwndOf(entry.window.getNativeWindowHandle()),entry.rect,state=>{entry.covered=!!state.covered;entry.covering=state.covered?{class:state.class,zoomed:!!state.zoomed,hwnd:state.hwnd}:null;applyPower(entry);});
  applyPower(entry);}
+// ---- 桌面歌词: one system-media watcher for all layers; words per track from 网易云 / QQ音乐 (lib/lyrics.js) ----
+const mediaState={watcher:null,last:null};const lyricCache=new Map();
+const inLayer=(entry,code)=>{if(entry.window.isDestroyed())return;const wc=entry.window.webContents,send=()=>wc.executeJavaScript(code).catch(()=>{});if(wc.isLoading())wc.once('did-finish-load',send);else send();};
+const trackKey=m=>m&&m.sessions>0&&(m.title||m.artist)?`${m.title}\n${m.artist}`:'';
+function lyricsEntry(entry){if(!entry.lyrics){entry.lyricsState=null;mediaWatchSync();return;}
+ const src=entry.lyrics.source;entry.lyricsState={track:null,playing:false,lines:src.mode==='manual'?Lyrics.parseLRC(src.lrc).length:0,source:src.mode==='manual'?'manual':'',error:'',key:''};
+ mediaWatchSync();if(mediaState.last)onMedia(mediaState.last);}
+function mediaWatchSync(){const need=[...layers.values()].some(e=>e.lyrics);
+ if(need&&!mediaState.watcher&&process.platform==='win32')mediaState.watcher=native.watchMedia(onMedia);
+ if(!need&&mediaState.watcher){mediaState.watcher.stop();mediaState.watcher=null;mediaState.last=null;}}
+function onMedia(m){mediaState.last=m;const key=trackKey(m);
+ for(const entry of layers.values()){if(!entry.lyrics||entry.window.isDestroyed())continue;const st=entry.lyricsState,src=entry.lyrics.source;
+  st.track=key?{title:m.title||'',artist:m.artist||'',album:m.album||'',app:m.app||''}:null;st.playing=!!m.playing;
+  // Position goes to the layer whenever a session exists (manual LRC syncs to the player too); none → own clock.
+  inLayer(entry,`window.__setMedia&&window.__setMedia(${JSON.stringify(key?{position:m.position,playing:!!m.playing}:null)})`);
+  if(src.mode!=='auto')continue;
+  if(st.key!==key){st.key=key;if(!key){st.lines=0;st.source='';st.error='';inLayer(entry,'window.__setLyrics&&window.__setLyrics({lines:[]})');continue;}
+   fetchLyrics(entry,key,{title:m.title||'',artist:m.artist||'',duration:m.duration||0,query:src.query},src.provider);}}}
+async function fetchLyrics(entry,key,want,provider){const st=entry.lyricsState,cacheKey=provider+'|'+(want.query||key);
+ try{let hit=lyricCache.get(cacheKey);if(!hit){hit=Lyrics.findLyrics(want,{provider});lyricCache.set(cacheKey,hit);if(lyricCache.size>40)lyricCache.delete(lyricCache.keys().next().value);}
+  const found=await hit;if(st.key!==key||entry.window.isDestroyed())return;st.lines=found.lines.length;st.source=found.provider;st.error='';
+  inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:found.lines,provider:found.provider})})`);}
+ catch(error){lyricCache.delete(cacheKey);if(st.key!==key)return;st.lines=0;st.source='';st.error=error.message||'歌词获取失败';inLayer(entry,`window.__setLyrics&&window.__setLyrics(${JSON.stringify({lines:[],error:st.error})})`);}}
 function watchPower(){power.onBattery=powerMonitor.isOnBatteryPower();
  powerMonitor.on('lock-screen',()=>{power.locked=true;powerAll();});powerMonitor.on('unlock-screen',()=>{power.locked=false;powerAll();});
  powerMonitor.on('on-battery',()=>{power.onBattery=true;powerAll();});powerMonitor.on('on-ac',()=>{power.onBattery=false;powerAll();});
@@ -83,25 +107,25 @@ async function monitors(){
 // background: PNG for the system wallpaper (also the still fallback under a live layer);
 // overlay: transparent PNG for the layer window; live: {name,type,bytes,plan} video that the layer plays;
 // clips: video layers from modules/layers.js, each {name,type,bytes,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}.
-async function apply({monitorId,background,overlay,live,clips}={}){
+async function apply({monitorId,background,overlay,live,clips,lyrics}={}){
  if(typeof monitorId!=='string'||!monitorId)throw new Error('缺少显示器');
  const list=await monitors(),monitor=list.find(m=>m.id===monitorId);if(!monitor)throw new Error('显示器已不存在，请刷新列表');
- const checked=live?checkLive(live):null,clipList=checkClips(clips);
+ const checked=live?checkLive(live):null,clipList=checkClips(clips),lyricsCfg=checkLyrics(lyrics);
  await fsp.mkdir(DATA,{recursive:true});const key=keyOf(monitorId),stamp=Date.now();
  const file=path.join(DATA,`${key}-${stamp}.png`);await fsp.writeFile(file,dataUrlToPng(background));
  status('正在设置系统壁纸…');await native.setWallpaper(monitorId,file);
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-')&&old.endsWith('.png')&&!old.includes('overlay')&&old!==path.basename(file))fsp.unlink(path.join(DATA,old)).catch(()=>{});
- const content={overlay:null,live:null,clips:[]};
+ const content={overlay:null,live:null,clips:[],lyrics:lyricsCfg};
  if(overlay){content.overlay=path.join(DATA,`${key}-overlay.png`);await fsp.writeFile(content.overlay,dataUrlToPng(overlay));}
  if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan,still:file};}
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-live-')&&(!content.live||old!==path.basename(content.live.video)))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  if(clipList.length){status('正在写入图层视频…');content.clips=[];for(const [i,c] of clipList.entries()){const video=path.join(DATA,`${key}-clip-${i}-${stamp}.${c.ext}`);await fsp.writeFile(video,c.bytes);content.clips.push({...c.item,video});}}
  const keepClips=new Set(content.clips.map(c=>path.basename(c.video)));for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-clip-')&&!keepClips.has(old))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  if(content.clips.length)content.still=file;
- if(content.overlay||content.live||content.clips.length){status('正在放置桌面层…');await showLayer(monitorId,monitor,content,stamp);}
+ if(content.overlay||content.live||content.clips.length||content.lyrics){status('正在放置桌面层…');await showLayer(monitorId,monitor,content,stamp);}
  else await clearLayer(monitorId);
  await saveLayers();status('已应用到显示器 '+(monitor.index+1)+(content.live?'（动态壁纸）':content.clips.length?'（含动态图层）':''));
- return {ok:true,file,layer:layers.has(monitorId),live:!!content.live,clips:content.clips.length};
+ return {ok:true,file,layer:layers.has(monitorId),live:!!content.live,clips:content.clips.length,lyrics:!!content.lyrics};
 }
 // A transparent, click-through window the size of the monitor, parented under the wallpaper host by the bridge.
 // content = {overlay: PNG path | null, live: {video, plan, still} | null, clips: [{video,…look}], still}; layer.html paints the video
@@ -113,23 +137,25 @@ async function showLayer(monitorId,monitor,content,stamp){
   const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
   win.setIgnoreMouseEvents(true);win.setMenuBarVisibility(false);
-  entry={window:win,overlay:null,live:null,clips:[],still:null,paused:false,pauseReason:'',covered:false,watcher:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
+  entry={window:win,overlay:null,live:null,clips:[],still:null,lyrics:null,lyricsState:null,paused:false,pauseReason:'',covered:false,watcher:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
   win.on('closed',()=>{entry.watcher?.stop();entry.watcher=null;if(layers.get(monitorId)===entry)layers.delete(monitorId);});
  }
- entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
+ entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.lyrics=content.lyrics||null;entry.lyricsState=null;entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  let url=fileUrl(path.join(__dirname,'layer.html'))+'?v='+stamp;
  if(entry.overlay)url+='&img='+encodeURIComponent(fileUrl(entry.overlay));
  if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),still:entry.live.still?fileUrl(entry.live.still):null,plan:entry.live.plan}));
  if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?fileUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:fileUrl(c.video)}))}));
+ if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?Lyrics.parseLRC(entry.lyrics.source.lrc):[]}));
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
  entry.paused=undefined;entry.pauseReason=undefined;watchEntry(entry); // a fresh page starts playing: re-evaluate and resend the decision
+ lyricsEntry(entry);
 }
-async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);entry.watcher?.stop();entry.watcher=null;
+async function clearLayer(monitorId){const entry=layers.get(monitorId);if(!entry)return;layers.delete(monitorId);entry.watcher?.stop();entry.watcher=null;mediaWatchSync();
  if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
  if(!entry.window.isDestroyed())entry.window.destroy();await saveLayers();}
-const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,overlay:e.overlay,live:e.live,clips:e.clips,still:e.still,rect:e.rect})));
+const saveLayers=()=>writeJson(LAYERS,[...layers].map(([monitorId,e])=>({monitorId,overlay:e.overlay,live:e.live,clips:e.clips,still:e.still,lyrics:e.lyrics,rect:e.rect})));
 // Windows keeps the wallpaper itself; the layer windows are ours to bring back after a restart.
 async function restoreLayers(){
  const saved=readJson(LAYERS,[]);if(!Array.isArray(saved)||!saved.length)return;
@@ -137,8 +163,9 @@ async function restoreLayers(){
  for(const item of saved){
   const monitor=list.find(m=>m.id===item.monitorId),overlay=item.overlay||item.file||null,live=item.live&&item.live.video&&item.live.plan?item.live:null; // `file` = pre-live layers.json
   const clips=(Array.isArray(item.clips)?item.clips:[]).filter(c=>c&&typeof c.video==='string'&&fs.existsSync(c.video)),still=item.still&&fs.existsSync(item.still)?item.still:null;
-  if(!monitor||(overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live&&!clips.length))continue;
-  try{await showLayer(item.monitorId,monitor,{overlay,live,clips,still},Date.now());}catch(error){console.error('restore layer',error);}
+  let lyrics=null;try{lyrics=checkLyrics(item.lyrics);}catch{}
+  if(!monitor||(overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live&&!clips.length&&!lyrics))continue;
+  try{await showLayer(item.monitorId,monitor,{overlay,live,clips,still,lyrics},Date.now());}catch(error){console.error('restore layer',error);}
  }
  await saveLayers();
 }
@@ -148,7 +175,7 @@ ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
-ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?Lyrics.parseLRC(e.lyrics.source.lrc).length:0,source:'',error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:get-settings',()=>settings);
 ipcMain.handle('client:set-settings',(e,patch)=>setSettings(patch));
 process.on('unhandledRejection',error=>{console.error(error);if(mainWindow&&!mainWindow.isDestroyed())status('出错：'+(error?.message||error));});

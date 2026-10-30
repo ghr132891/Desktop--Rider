@@ -27,4 +27,14 @@ function checkClips(clips){
   const ext={'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov'}[c.type]||'mp4';
   return {bytes,ext,item:{name:String(c.name||'视频').slice(0,80),x:c.x,y:c.y,w:c.w,h:c.h,rotate:c.rotate,flipX:c.flipX===true,opacity:c.opacity,blur:c.blur,hue:c.hue,saturate:c.saturate,brightness:c.brightness,radius:c.radius,blend:c.blend,fit:c.fit,above:c.above===true}};});
 }
-module.exports={checkLive,checkClips};
+// 桌面歌词 payload from modules/lyrics.js: style in px for the monitor plus the source; null when off.
+const TRANSITIONS=['fade','slide','blur','none'],ALIGNS=['left','center','right'],PROVIDERS=['auto','netease','qq'];
+function checkLyrics(l){
+ if(l==null)return null;if(typeof l!=='object'||!l.style||typeof l.style!=='object')throw new Error('歌词数据无效');
+ const st=l.style,src=l.source&&typeof l.source==='object'?l.source:{},num=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max,str=(v,n)=>typeof v==='string'?v.slice(0,n):'';
+ if(![st.x,st.y].every(v=>num(v,-1e5,1e5))||!num(st.width,1,1e5)||!num(st.size,1,5000)||!num(st.weight,100,900)||!num(st.duration,0,10)||!num(st.nextOpacity,0,100))throw new Error('歌词样式无效');
+ if(!/^#[0-9a-f]{6}$/i.test(st.color||'')||!/^#[0-9a-f]{6}$/i.test(st.strokeColor||'#000000')||!TRANSITIONS.includes(st.transition)||!ALIGNS.includes(st.align))throw new Error('歌词样式无效');
+ return {source:{mode:src.mode==='manual'?'manual':'auto',provider:PROVIDERS.includes(src.provider)?src.provider:'auto',query:str(src.query,120),lrc:str(src.lrc,20000),offset:num(src.offset,-30,30)?src.offset:0},
+  style:{x:st.x,y:st.y,width:st.width,size:st.size,font:str(st.font,300)||'sans-serif',weight:st.weight,color:st.color.toLowerCase(),stroke:st.stroke===true,strokeColor:(st.strokeColor||'#000000').toLowerCase(),shadow:st.shadow!==false,align:st.align,transition:st.transition,duration:st.duration,next:st.next!==false,nextOpacity:st.nextOpacity,trans:st.trans!==false,offset:num(src.offset,-30,30)?src.offset:0}};
+}
+module.exports={checkLive,checkClips,checkLyrics};

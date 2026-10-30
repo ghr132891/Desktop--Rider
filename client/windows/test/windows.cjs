@@ -143,6 +143,19 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers');m.remove(m.me().items.at(-1));});await page.waitForFunction(()=>state.modules.layers.items.length===0);
   assert.deepEqual(errors,[],'no page errors after the clip step');
 
+  // 3d. 桌面歌词 (modules/lyrics.js): manual LRC with three lines, green 5 % text, fade. The runner has no media session,
+  //     so the layer window runs its own clock: the shown line cycles through all three; style arrives in px.
+  await page.evaluate(()=>{Object.assign(state.modules.lyrics,{enabled:true,mode:'manual',lrc:'[00:00.00]第一句歌词\n[00:01.50]第二句歌词\n[00:03.00]第三句歌词',size:5,color:'#00ff00',transition:'fade',duration:.3,y:30});update({custom:false});document.querySelector('#client-status').textContent='';});
+  await page.locator('.client-monitor').nth(primary.index).click();
+  await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
+  const lyricsStatus=await page.locator('#client-status').textContent();log('lyrics apply status',{status:lyricsStatus});assert.match(lyricsStatus,/（含桌面层）$/);
+  const lyricsLayers=await page.evaluate(()=>desktopRider.layers());log('lyrics layers',{layers:lyricsLayers});assert.equal(lyricsLayers[0].lyrics?.mode,'manual');assert.equal(lyricsLayers[0].lyrics?.lines,3);
+  const lyricSeen=new Set();let lyricStyle=null;for(let i=0;i<20;i++){const r=await layerWin().evaluate(()=>{const b=document.getElementById('lyrics'),cs=getComputedStyle(b);return {line:b.querySelector('.lyrics-line.in')?.textContent||'',hidden:b.hidden,fontSize:parseFloat(cs.fontSize),color:cs.color,transition:b.dataset.transition,media:window.__lyrics.media,ticks:window.__lyrics.ticks};});lyricStyle=r;if(r.line)lyricSeen.add(r.line);await page.waitForTimeout(300);}
+  log('lyrics in the layer window',{seen:[...lyricSeen],style:lyricStyle});
+  assert.ok(['第一句歌词','第二句歌词','第三句歌词'].every(t=>lyricSeen.has(t)),'the layer window cycles through the lines on its own clock: '+[...lyricSeen].join('|'));
+  assert.equal(lyricStyle.hidden,false);assert.ok(Math.abs(lyricStyle.fontSize-primary.height*.05)<1,'5 % of the monitor height in px: '+lyricStyle.fontSize);assert.equal(lyricStyle.color,'rgb(0, 255, 0)');assert.equal(lyricStyle.transition,'fade');assert.equal(lyricStyle.media,null,'no media session on the runner → own clock');
+  await hideMain(app);await page.waitForTimeout(1500);await screenshot('2d-lyrics.png');await showMain(app);
+
   // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
    rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
@@ -161,7 +174,7 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await app.close();app=null;
   ({app,page}=await launch(userData));
   const restored=(await until(page,async()=>{const l=await desktopRider.layers();return l.length===1&&l[0].attached?l:null;},'the restored layer'))[0];log('restored layer',{restored});
-  assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,liveLayers[0].hwnd,'a new window after restart');assert.equal(restored.live,true);
+  assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,liveLayers[0].hwnd,'a new window after restart');assert.equal(restored.live,true);assert.equal(restored.lyrics?.lines,3,'the manual lyrics came back with the layer');
   const info2=await bridge.layerInfo(restored.hwnd);log('restored layer window',info2);
   assert.equal(info2.valid,true);assert.equal(info2.visible,true);assert.equal(info2.parentClass,restored.host==='workerw'?'WorkerW':'Progman');assert.deepEqual(rectOf(info2),rectOf(primary));
   const kept=await bridge.getWallpaper(primary.id);assert.ok(kept&&fs.existsSync(kept)&&path.basename(kept).startsWith(path.basename(current).slice(0,12)),'Windows kept our wallpaper across the restart');
@@ -185,6 +198,6 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   fs.writeFileSync(path.join(OUT,'report.json'),JSON.stringify(report,null,1));
   fs.rmSync(userData,{recursive:true,force:true});
  }
- const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window (paused behind a maximised window, resumed after), restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
+ const summary=`PASS: on ${os.release()} the bridge set the wallpaper per monitor at ${primary.width}×${primary.height}, parented the layer window under ${report.steps.find(s=>s.step==='layers').layers[0].host}, rendered a bare piece strip as gap colour / 本机扩图 / covered, played a video layer above the person in the layer window (paused behind a maximised window, resumed after), showed cycling 桌面歌词 lines, restored the live layer after a restart and cleared it. Screenshots in ${OUT}`;
  console.log(summary);if(process.env.GITHUB_ACTIONS)console.log('::notice title=test/windows.cjs::'+summary);
 })().catch(error=>{console.error(error);process.exit(1);});

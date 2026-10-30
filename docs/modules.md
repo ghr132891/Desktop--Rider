@@ -68,7 +68,7 @@ Rider.register({
 - **时钟 / 天气 / 便签**：与桌面文字同构，各自一个模块文件。
 - **自由画布元素**（参考 `modules/layers.js` 图层）：元素坐标用桌面百分比（中心点 + 宽高），预览用 `left/top/width/height` + `transform` + `filter` + `mix-blend-mode`，导出在 `draw` 里用同样的 `translate / rotate / scale`、`ctx.filter` 与 `globalCompositeOperation` 重画，这样两边逐像素一致。需要既有「人物之下」又有「人物之上」的内容时，再注册一个只带 `render / draw` 的伴随模块（`order ≥ 100`，`panelView:'none'` 让它没有面板），两者共用主模块的状态切片；选中框放在伴随模块的图层里（z 18）才能盖住人物副本。
 - **逐帧视觉处理**（参考 `modules/live.js` 的逐帧人物提取）：`Portrait.segmentVideo(bitmap,timestamp)` 把一帧（缩到 384 px 宽的 ImageBitmap）送进 Worker 里 VIDEO 模式的人像模型，返回 `{width,height,values}` 置信度；一次只送一帧，拿到结果再送下一帧。合成在主线程 canvas 上做（`destination-in` 套蒙版；蒙版要与送检的那一帧一起用，所以先 `createImageBitmap(video)` 留住全分辨率帧，再缩小送 Worker；动态背景用一张指数平均的背景板：非人物区域逐帧从视频更新，人物区域保持静帧补全），悬浮副本的静态 `<img>` 保留用于拖动与命中，自己的画布叠在 `z-index 15`（副本之上、选中框之下）。
-- **跟随壁纸分区的图层**（参考 `modules/live.js` 动态壁纸）：`order < 100`，监听 `render` 事件后读取 `#piece-left / #piece-right` 的 `clipPath`、`backgroundSize`、`backgroundPosition`，让自己的画布与分区逐像素对齐；大文件放 IndexedDB，方案里只存元数据；给客户端提供 `exportFor(s,w,h)`（分区视频方案）或 `exportClips(s,w,h)`（按显示器尺寸算好位置与外观的视频片段列表，见 `modules/layers.js`）之类的方法（不要用保留钩子名）返回按显示器分辨率算好的几何。
+- **跟随壁纸分区的图层**（参考 `modules/live.js` 动态壁纸）：`order < 100`，监听 `render` 事件后读取 `#piece-left / #piece-right` 的 `clipPath`、`backgroundSize`、`backgroundPosition`，让自己的画布与分区逐像素对齐；大文件放 IndexedDB，方案里只存元数据；给客户端提供 `exportFor(s,w,h)`（分区视频方案）或 `exportClips(s,w,h)`（按显示器尺寸算好位置与外观的视频片段列表，见 `modules/layers.js`）或 `exportLyrics(s,w,h)`（样式按显示器像素 + 歌词来源，见 `modules/lyrics.js`；客户端主进程监听系统媒体会话并拉取歌词，层窗口按样式逐句切换）之类的方法（不要用保留钩子名）返回按显示器分辨率算好的几何。
 - **原生客户端**：把 `Rider.api` 之外的系统能力（设壁纸、枚举显示器、监听播放器）做成单独的模块或 `api` 扩展，界面层无需改动。
 
 ## 验证

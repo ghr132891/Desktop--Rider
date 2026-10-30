@@ -7,11 +7,13 @@
 #   bridge.ps1 -Command layer-info -Hwnd <n>               (verification: parent class, visibility, screen rect)
 #   bridge.ps1 -Command covering -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>   (is the desktop on this monitor hidden by a window?)
 #   bridge.ps1 -Command watch -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>      (same, one JSON line per change, every second, until killed)
+#   bridge.ps1 -Command media                                  (system media session: what QQ音乐 / 网易云音乐 / … is playing, position)
+#   bridge.ps1 -Command watch-media                            (same, one JSON line per change, every second, until killed)
 # Prints one JSON document on stdout; any failure goes to stderr with exit code 1.
 # Needs only Windows PowerShell 5.1 (present on every Win10/11) — the C# below is
 # compiled in memory by Add-Type, no SDK required.
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info','covering','watch')][string]$Command,
+  [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info','covering','watch','media','watch-media')][string]$Command,
   [string]$MonitorId,[string]$Path,[long]$Hwnd=0,[int]$Left=0,[int]$Top=0,[int]$Width=0,[int]$Height=0
 )
 $ErrorActionPreference='Stop'
@@ -146,6 +148,29 @@ namespace DesktopRider {
 }
 '@
 [DesktopRider.Api]::DpiAware()
+# System Media Transport Controls (what the volume flyout shows): title / artist / status / position of the session
+# that is playing, else the system's current one. WinRT from Windows PowerShell 5.1 needs the AsTask bridge below.
+$script:mediaReady = $false
+function Get-Media {
+  try {
+    if (-not $script:mediaReady) {
+      Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
+      $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
+      $script:asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+      $script:mediaReady = $true
+    }
+    $await = { param($op, $type) $t = $script:asTask.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
+    $mgr = & $await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+    $sessions = @($mgr.GetSessions())
+    if ($sessions.Count -eq 0) { return [ordered]@{ sessions=0; playing=$false } }
+    $s = $sessions | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 4 } | Select-Object -First 1
+    if (-not $s) { $s = $mgr.GetCurrentSession() }
+    if (-not $s) { $s = $sessions[0] }
+    $props = & $await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+    $tl = $s.GetTimelineProperties(); $pb = $s.GetPlaybackInfo()
+    return [ordered]@{ sessions=$sessions.Count; playing=($pb.PlaybackStatus -eq 4); status=[string]$pb.PlaybackStatus; app=[string]$s.SourceAppUserModelId; title=[string]$props.Title; artist=[string]$props.Artist; album=[string]$props.AlbumTitle; position=[math]::Round($tl.Position.TotalSeconds, 2); duration=[math]::Round($tl.EndTime.TotalSeconds, 2); updated=$tl.LastUpdatedTime.ToUnixTimeMilliseconds() }
+  } catch { return [ordered]@{ sessions=0; playing=$false; error=$_.Exception.Message } }
+}
 function Get-Covering { param([long]$Exclude,[int]$L,[int]$T,[int]$W,[int]$H)
   $info = [DesktopRider.Api]::Covering($Exclude, $L, $T, $W, $H)
   if (-not $info) { return [ordered]@{ covered=$false } }
@@ -187,6 +212,17 @@ switch ($Command) {
     $last = $null
     while ($true) {
       $json = ConvertTo-Json -Compress -InputObject (Get-Covering -Exclude $Hwnd -L $Left -T $Top -W $Width -H $Height)
+      if ($json -ne $last) { [Console]::Out.WriteLine($json); [Console]::Out.Flush(); $last = $json }
+      Start-Sleep -Milliseconds 1000
+    }
+  }
+  'media' {
+    ConvertTo-Json -Compress -InputObject (Get-Media)
+  }
+  'watch-media' {
+    $last = $null
+    while ($true) {
+      $json = ConvertTo-Json -Compress -InputObject (Get-Media)
       if ($json -ne $last) { [Console]::Out.WriteLine($json); [Console]::Out.Flush(); $last = $json }
       Start-Sleep -Milliseconds 1000
     }

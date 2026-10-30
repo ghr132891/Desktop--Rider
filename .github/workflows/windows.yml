@@ -78,8 +78,9 @@ jobs:
         run: |
           $mon = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/bridge.ps1 -Command monitors 2>&1 | Out-String; $c1 = $LASTEXITCODE
           $cov = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/bridge.ps1 -Command covering -Hwnd 0 -Left 0 -Top 0 -Width 1024 -Height 768 2>&1 | Out-String; $c2 = $LASTEXITCODE
-          $text = ("monitors (exit $c1): " + $mon.Trim() + "%0Acovering (exit $c2): " + $cov.Trim()) -replace "`r?`n", '%0A'
-          if ($c1 -ne 0 -or $c2 -ne 0) { "::error title=bridge.ps1 self-check::$text"; exit 1 } else { "::notice title=bridge.ps1 self-check::$text" }
+          $med = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/bridge.ps1 -Command media 2>&1 | Out-String; $c3 = $LASTEXITCODE
+          $text = ("monitors (exit $c1): " + $mon.Trim() + "%0Acovering (exit $c2): " + $cov.Trim() + "%0Amedia (exit $c3): " + $med.Trim()) -replace "`r?`n", '%0A'
+          if ($c1 -ne 0 -or $c2 -ne 0 -or $c3 -ne 0) { "::error title=bridge.ps1 self-check::$text"; exit 1 } else { "::notice title=bridge.ps1 self-check::$text" }
       - name: Unit tests
         run: node test/ci-run.cjs "npm test" npm test
       - name: Electron smoke test

@@ -89,3 +89,38 @@ test('covering watcher: bridge arguments and line parsing',()=>{
  assert.deepEqual(states,[{covered:true,zoomed:true},{covered:false}]);assert.equal(killed,true);
  assert.deepEqual(native.create({platform:'darwin'}).watchCovering(1,{left:0,top:0,width:1,height:1},()=>{}).stop(),undefined);
 });
+
+test('lyrics: LRC parsing, matching and the two providers through a fake fetch',async()=>{
+ const L=require('../lib/lyrics');
+ assert.deepEqual(L.parseLRC('[ti:x]\n[00:01.50][00:03.25]同一句\n[00:02.000]第二句').map(l=>[l.t,l.text]),[[1.5,'同一句'],[2,'第二句'],[3.25,'同一句']]);
+ assert.deepEqual(L.mergeTrans([{t:2,text:'a'}],[{t:2.1,text:'A'}]),[{t:2,text:'a',trans:'A'}]);
+ assert.equal(L.clean('晴天 (Live) - Remix【官方】'),'晴天');
+ const cands=[{id:'1',title:'晴天',artist:'周杰伦',duration:269},{id:'2',title:'晴天 (钢琴版)',artist:'某某',duration:200},{id:'3',title:'阴天',artist:'周杰伦'}];
+ assert.equal(L.pickBest(cands,{title:'晴天',artist:'周杰伦',duration:270}).id,'1');assert.equal(L.pickBest(cands,{title:'阴天',artist:'莫文蔚'}).id,'3');assert.equal(L.pickBest(cands,{title:'夜曲',artist:'周杰伦'}),null);
+ const b64=s=>Buffer.from(s,'utf8').toString('base64');const calls=[];
+ const fetch=async(url)=>{calls.push(url);const body=url.includes('music.163.com/api/search')?{result:{songs:[{id:9,name:'晴天',artists:[{name:'周杰伦'}],duration:269000}]}}
+  :url.includes('music.163.com/api/song/lyric')?{lrc:{lyric:'[00:01.00]故事的小黄花\n[00:04.00]从出生那年就飘着'},tlyric:{lyric:'[00:01.00]little flower'}}
+  :url.includes('client_search_cp')?'MusicJsonCallback({"data":{"song":{"list":[{"mid":"m1","name":"晴天","singer":[{"name":"周杰伦"}],"interval":269}]}}})'
+  :url.includes('fcg_query_lyric_new')?{lyric:b64('[00:02.00]QQ 第一句'),trans:b64('[00:02.00]first')}:null;
+  return {json:async()=>body,text:async()=>typeof body==='string'?body:JSON.stringify(body)};};
+ const ne=await L.findLyrics({title:'晴天',artist:'周杰伦',duration:269},{fetch});
+ assert.equal(ne.provider,'netease');assert.equal(ne.id,'9');assert.deepEqual(ne.lines[0],{t:1,text:'故事的小黄花',trans:'little flower'});assert.equal(ne.lines.length,2);
+ const qq=await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch,provider:'qq'});assert.equal(qq.provider,'qq');assert.deepEqual(qq.lines,[{t:2,text:'QQ 第一句',trans:'first'}]);
+ // auto: 网易云 has nothing → QQ音乐 answers; an explicit query takes the first hit.
+ const empty=async(url)=>url.includes('music.163.com')?{json:async()=>({result:{songs:[]}}),text:async()=>'{}'}:fetch(url);
+ assert.equal((await L.findLyrics({title:'晴天',artist:'周杰伦'},{fetch:empty})).provider,'qq');
+ assert.equal((await L.findLyrics({title:'x',artist:'y',query:'晴天 周杰伦'},{fetch,provider:'netease'})).id,'9');
+ await assert.rejects(L.findLyrics({title:'夜曲',artist:'周杰伦'},{fetch,provider:'netease'}),/没有匹配/);
+ await assert.rejects(L.findLyrics({title:'',artist:''},{fetch}),/没有可搜索/);
+ assert.deepEqual(L.jsonp('cb({"a":1});'),{a:1});
+});
+
+test('lyrics payload is validated before it reaches the layer window',()=>{
+ const {checkLyrics}=require('../lib/live');
+ const style={x:960,y:840,width:1536,size:64.8,font:'"Microsoft YaHei"',weight:600,color:'#FFFFFF',stroke:true,strokeColor:'#1b2a3f',shadow:true,align:'center',transition:'fade',duration:.5,next:true,nextOpacity:55,trans:true};
+ assert.equal(checkLyrics(null),null);assert.equal(checkLyrics(undefined),null);
+ const ok=checkLyrics({source:{mode:'manual',provider:'qq',lrc:'[00:01.00]a',offset:.5},style});
+ assert.equal(ok.source.mode,'manual');assert.equal(ok.source.provider,'qq');assert.equal(ok.style.color,'#ffffff');assert.equal(ok.style.offset,.5);assert.equal(ok.style.stroke,true);
+ assert.equal(checkLyrics({style}).source.mode,'auto');
+ assert.throws(()=>checkLyrics({style:{...style,transition:'zoom'}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,size:0}}),/样式/);assert.throws(()=>checkLyrics({style:{...style,color:'red'}}),/样式/);assert.throws(()=>checkLyrics('x'),/无效/);
+});
