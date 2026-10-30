@@ -48,7 +48,8 @@ namespace DesktopRider {
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
-    [DllImport("user32.dll")] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hWnd);
@@ -100,7 +101,7 @@ namespace DesktopRider {
     public static string Attach(long hwnd, int left, int top, int width, int height) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) throw new Exception("window handle is not valid");
       string mode; IntPtr host = WallpaperHost(out mode); if (host == IntPtr.Zero) throw new Exception("desktop host window not found");
-      SetParent(h, host);
+      if (SetParent(h, host) == IntPtr.Zero) { int code = Marshal.GetLastWin32Error(); throw new Exception("SetParent 失败（Win32 错误 " + code + "）" + (code == 5 ? "：请不要以管理员身份运行 Desktop Rider，提权后的窗口无法挂到资源管理器的桌面之下" : "")); }
       int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77); // child coordinates are relative to the virtual screen origin
       SetWindowPos(h, HWND_BOTTOM, left - vx, top - vy, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
       return mode;
@@ -110,7 +111,8 @@ namespace DesktopRider {
     // "parentClass|visible|left|top|right|bottom" in physical screen pixels, or "" when the handle is gone.
     public static string LayerInfo(long hwnd) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) return "";
-      IntPtr parent = GetParent(h); var name = new System.Text.StringBuilder(256); if (parent != IntPtr.Zero) GetClassName(parent, name, 256);
+      // GetAncestor(GA_PARENT), not GetParent: the latter returns NULL for an overlapped window even after SetParent.
+      IntPtr parent = GetAncestor(h, 1); var name = new System.Text.StringBuilder(256); if (parent != IntPtr.Zero) GetClassName(parent, name, 256);
       RECT rc; GetWindowRect(h, out rc);
       return name + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + rc.Left + "|" + rc.Top + "|" + rc.Right + "|" + rc.Bottom;
     }

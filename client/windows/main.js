@@ -73,7 +73,8 @@ async function apply({monitorId,background,overlay}={}){
 async function showLayer(monitorId,monitor,file,stamp){
  let entry=layers.get(monitorId);
  if(!entry||entry.window.isDestroyed()){
-  const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,resizable:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
+  // Not resizable:false — Electron would pin the maximum size to the work area (monitor minus taskbar) and the bridge's SetWindowPos could never reach the full monitor height.
+  const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.setIgnoreMouseEvents(true);win.setMenuBarVisibility(false);
   entry={window:win,file,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
