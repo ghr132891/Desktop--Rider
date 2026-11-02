@@ -40,17 +40,18 @@
   let bl=w,br=-1;for(let y=hb;y<=prof.bottom;y++){const r=prof.rows[y];if(r.n){if(r.l<bl)bl=r.l;if(r.r>br)br=r.r;}}
   if(hr<0||br<0)return null;
   const neckRow=prof.rows[hb],neckX=neckRow.n?(neckRow.l+neckRow.r)/2:(hl+hr)/2;
-  const headC=part(c,hl,prof.top,hr+1,hb+overlap,{from:hb-prof.top,to:hb-prof.top+overlap,out:true}),bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1,{from:0,to:overlap,out:false});
+  // The head ends at the cut and fades out over its last rows, so no shoulder pixels get drawn, scaled up, across the body.
+  const headC=part(c,hl,prof.top,hr+1,hb,{from:hb-prof.top-overlap,to:hb-prof.top,out:true}),bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1,null); // the body stays solid: the head (drawn on top) fades over it, so no see-through band at the shoulders
   // Composite: body neck at the origin, head hanging from the same point, then shift to positive coordinates.
   const hs=headScale,bs=bodyScale,sq=bodySquash;
-  const head={w:headC.width*hs,h:headC.height*hs,x:-(neckX-hl)*hs,y:-(headC.height-overlap)*hs},body={w:bodyC.width*bs,h:bodyC.height*bs*sq,x:-(neckX-bl)*bs,y:-overlap*bs*sq};
+  const head={w:headC.width*hs,h:headC.height*hs,x:-(neckX-hl)*hs,y:-headC.height*hs},body={w:bodyC.width*bs,h:bodyC.height*bs*sq,x:-(neckX-bl)*bs,y:-overlap*bs*sq};
   const minX=Math.min(head.x,body.x),minY=Math.min(head.y,body.y);for(const p of [head,body]){p.x-=minX;p.y-=minY;}
   const width=Math.max(head.x+head.w,body.x+body.w),height=Math.max(head.y+head.h,body.y+body.h);
   // Face landmarks relative to the head part (fractions), for stickers; defaults when no face was found.
   let f={eyes:[{x:.36,y:.52},{x:.64,y:.52}],mouth:{x:.5,y:.74},blush:[{x:.27,y:.64},{x:.73,y:.64}],size:.18,detected:false};
   if(face&&face.keypoints&&face.keypoints.length>=4){const k=face.keypoints.map(p=>({x:(p.x*w-hl)/headC.width,y:(p.y*h-prof.top)/headC.height})),eyeW=Math.hypot(k[1].x-k[0].x,k[1].y-k[0].y);
    f={eyes:[k[0],k[1]],mouth:k[3],blush:[{x:k[0].x-eyeW*.15,y:k[0].y+eyeW*.55},{x:k[1].x+eyeW*.15,y:k[1].y+eyeW*.55}],size:clamp(eyeW*.9,.08,.35),detected:true};}
-  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:(headC.height-overlap)*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq,neckAdjust},cut:(hb-prof.top)/(prof.bottom-prof.top)};}
+  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:headC.height*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq,neckAdjust},cut:(hb-prof.top)/(prof.bottom-prof.top)};}
  // ---- phrases (overridable through command {type:'phrases'}) ----
  const PHRASES={tap:['嘿！','在呢~','嗯？','戳我干嘛呀'],pat:['好舒服…','再摸摸~','嘿嘿'],angry:['别戳啦！','生气了哦！','哼！'],cheer:['耶——！','太棒了！'],surprise:['哇！','诶？'],shy:['别看我啦…','讨厌~'],sleep:['Zz…','呼…呼…'],wake:['醒啦！','嗯…早'],drag:['哇哇哇——','放我下来~'],drop:['呼——','头好晕'],dance:['这首我会！','一起摇~'],idle:['今天也要加油哦','在想什么呢？','要不要听首歌？','……']};
  const FX={heart:'❤',note:'♪',note2:'♫',spark:'✦',anger:'💢',zz:'z',sweat:'💧',ex:'!',q:'?'};

@@ -18,7 +18,7 @@ const assert=require('node:assert/strict');
    // a face box deep in the figure moves the cut to the neck under it; the nudge moves it further
    faceCut:MascotView.buildRig(c,{face:{box:{x:.2,y:.05,w:.6,h:.25},keypoints:[{x:.4,y:.15},{x:.6,y:.15},{x:.5,y:.2},{x:.5,y:.25},{x:.3,y:.17},{x:.7,y:.17}]}}).cut,nudged:MascotView.buildRig(c,{neckAdjust:.1}).cut}))();});
  assert.ok(rig,'rig built');assert.equal(rig.face,false);assert.ok(rig.headH>rig.bodyH,'chibi: the head is taller than the squashed body: '+JSON.stringify(rig));assert.ok(rig.bodyBelowHead);
- assert.ok(rig.cut>.3&&rig.cut<.45,'the cut sits at the neck of the synthetic figure: '+rig.cut);assert.ok(rig.bodyTopAlpha<40&&rig.bodyMidAlpha>200&&rig.headBottomAlpha<40,'feathered seam: body fades in from the top, head fades out at the bottom: '+JSON.stringify(rig));
+ assert.ok(rig.cut>.3&&rig.cut<.45,'the cut sits at the neck of the synthetic figure: '+rig.cut);assert.ok(rig.bodyTopAlpha>200&&rig.bodyMidAlpha>200&&rig.headBottomAlpha<40,'feathered seam: the body stays solid, the head fades out over it: '+JSON.stringify(rig));
  assert.ok(Math.abs(rig.faceCut-rig.cut)<.08,'with a face box the cut still lands at the neck: '+rig.faceCut);assert.ok(Math.abs(rig.nudged-rig.cut-.1)<.02,'neckAdjust moves the cut: '+rig.nudged);
  // Module: the portrait wallpaper's person becomes the character; BlazeFace finds the face.
  await page.evaluate(()=>{state={...clone(defaults),wallpaper:'portrait',mode:'single'};update({zones:true});});await ready();
