@@ -188,8 +188,10 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
    const blob=await new Promise(resolve=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm',videoBitsPerSecond:6e6});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
     let t=0;const timer=setInterval(()=>{const k=t/60*6.283;ctx.drawImage(bg,0,0,W,H);ctx.drawImage(cut.cutout,box.x+Math.sin(k)*W*.06,box.y-Math.abs(Math.sin(k*3))*H*.01,box.w,box.h);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();});
    await Rider.modules.find(m=>m.id==='live').useFile(new File([blob],'ci.webm',{type:'video/webm'}),{time:0});})());
-  // (#float-status sits in the design view's panel, hidden while the client view is open: read its text, don't wait for visibility.)
-  await page.waitForFunction(()=>/人物已抠出/.test(document.querySelector('#float-status').textContent),null,{timeout:180000}).catch(async()=>{throw new Error('person not cut out of the live still: '+await page.evaluate(()=>document.querySelector('#float-status').textContent));});
+  // Importing a video replaces the wallpaper and resets the floating person (as for any new picture): turn it on again,
+  //     which auto-cuts the person out of the new still, then come back to the client view.
+  await page.locator('[data-view="design"]').click();await page.locator('#float-toggle').check();await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:180000});log('person cut out of the live still');
+  await page.locator('[data-view="client"]').click();await page.waitForFunction(()=>document.querySelectorAll('.client-monitor').length>0);
   await page.waitForFunction(()=>state.modules.live.enabled&&document.querySelectorAll('.live-piece:not([hidden])').length>0,null,{timeout:30000});log('live video imported',{live:await page.evaluate(()=>state.modules.live)});
   await page.locator('.client-monitor').nth(primary.index).click();
   await page.waitForFunction(()=>/^(已应用到显示器 \d+（动态壁纸）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
