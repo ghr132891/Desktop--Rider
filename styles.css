@@ -80,3 +80,7 @@ dialog.wide-dialog{width:min(880px,calc(100% - 32px))}dialog h3{font-size:13px;f
 .mc-try{display:flex;flex-wrap:wrap;gap:6px 12px;margin:4px 0 10px}
 .mc-log{font:11px/1.5 "Cascadia Code",Consolas,monospace;color:#66778d;background:#f5f7fa;border-radius:6px;padding:6px 8px;min-height:2.6em;white-space:pre-wrap;margin:8px 0 0}
 .mc-log:empty{display:none}
+
+/* 我的方案: import / export */
+.saved-heading>div:first-child span{display:block;font-size:11px;color:#8792a3;margin-top:4px}.saved-actions{display:flex;gap:8px;flex-wrap:wrap}
+.icon-button:disabled{opacity:.35;cursor:default}

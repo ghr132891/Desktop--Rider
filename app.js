@@ -42,6 +42,15 @@ function normalizeState(input){const s={...clone(defaults),...input};
 let draft = readStorage('desktop-rider-draft',null);
 let state = validState(draft) ? normalizeState(draft) : clone(defaults);
 let saved = readStorage('desktop-rider-schemes',[]);
+// ---- undo / redo: one step per settled burst of changes (a whole drag is one step), snapshots as JSON ----
+const history={past:[],future:[],last:JSON.stringify(state),dirty:false,timer:0,bytes:0,MAX:60,MAX_BYTES:40*1024*1024};
+function commitHistory(){clearTimeout(history.timer);history.dirty=false;const now=JSON.stringify(state);if(now===history.last)return;history.past.push(history.last);history.bytes+=history.last.length;history.future=[];history.last=now;
+ while(history.past.length>history.MAX||(history.bytes>history.MAX_BYTES&&history.past.length>1))history.bytes-=history.past.shift().length;updateHistoryButtons();}
+function scheduleHistory(){history.dirty=true;clearTimeout(history.timer);history.timer=setTimeout(commitHistory,400);updateHistoryButtons();}
+function applySnapshot(json){state=normalizeState(JSON.parse(json));history.last=json;history.dirty=false;updateControls();scheduleRender();renderZones();persistDraft();Rider.emit('state',state);updateHistoryButtons();}
+function undo(){commitHistory();if(!history.past.length){toast('没有可撤销的操作');return;}const prev=history.past.pop();history.bytes-=prev.length;history.future.push(history.last);applySnapshot(prev);}
+function redo(){commitHistory();if(!history.future.length){toast('没有可重做的操作');return;}const next=history.future.pop();history.past.push(history.last);history.bytes+=history.last.length;applySnapshot(next);}
+function updateHistoryButtons(){const u=document.getElementById('undo'),r=document.getElementById('redo');if(u)u.disabled=!history.past.length&&!history.dirty;if(r)r.disabled=!history.future.length;}
 saved = Array.isArray(saved) ? saved.filter(s=>s && typeof s.id==='string' && typeof s.name==='string' && validState(s.state)) : [];
 let pickingSplit=false;
 let currentView='design', toastTimer, persistTimer, storageWarning=false;
@@ -253,7 +262,7 @@ function updateControls(){
 }
 let renderFrame;
 function scheduleRender(){cancelAnimationFrame(renderFrame);renderFrame=requestAnimationFrame(()=>renderDesktop());}
-function update({zones=false,custom=true}={}){if(custom)state.preset=null;updateControls();scheduleRender();if(zones)renderZones();persistDraft();Rider.emit('state',state);}
+function update({zones=false,custom=true}={}){if(custom)state.preset=null;updateControls();scheduleRender();if(zones)renderZones();persistDraft();scheduleHistory();Rider.emit('state',state);}
 const clampZone=(v,max)=>Math.max(0,Math.min(max,Math.round(v*10)/10));
 function moveItem(itemId,zoneId){const item=state.items.find(x=>x.id===itemId);if(!item||!state.zones.some(z=>z.id===zoneId))return;const count=state.items.filter(x=>x.zone===zoneId).length;if(item.zone!==zoneId&&count>=6){toast('每个分区最多收纳 6 个快捷项');return;}item.zone=zoneId;update({zones:true,custom:false});}
 function renderZones(){
@@ -300,7 +309,7 @@ async function wallpaperCanvas(s,width=1600,{layers='all'}={}){const canvas=docu
   geo.polygons.forEach((points,i)=>{if(!points.length)return;const img=own[i]||view.img,src=own[i]?s.pieces[i].image:view.src,placement=piecePlacement(s,img,w,h,points,i);drawFill(ctx,s,i,img,src,points,placement,w,h,exts[i]);ctx.save();pathOf(ctx,points);ctx.clip();ctx.drawImage(img,placement.x,placement.y,placement.w,placement.h);ctx.restore();});await drawModules(ctx,s,w,h,view,below);}
  if(fg){drawFloat(ctx,s,view,w,h);await drawModules(ctx,s,w,h,view,m=>!below(m));}return canvas;}
 function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function renderSaved(){const root=$('#saved-grid');root.replaceChildren();$('#empty-saved').hidden=saved.length>0;saved.forEach(entry=>{const card=document.createElement('article');card.className='saved-card';if(typeof entry.thumbnail==='string'&&entry.thumbnail.startsWith('data:image/')){const img=new Image();img.src=entry.thumbnail;img.alt=entry.name+'壁纸预览';card.append(img);}const content=document.createElement('div');content.className='saved-card-content';const heading=document.createElement('h3');heading.textContent=entry.name;const date=document.createElement('p');date.textContent='保存于 '+new Date(entry.createdAt).toLocaleDateString('zh-CN');const actions=document.createElement('div');actions.className='saved-card-actions';const load=document.createElement('button');load.className='button secondary';load.textContent='载入方案';load.addEventListener('click',()=>{state=normalizeState(entry.state);setView('design');update({zones:true,custom:false});toast('已载入「'+entry.name+'」');});const remove=document.createElement('button');remove.className='text-button';remove.textContent='删除';remove.addEventListener('click',()=>{const next=saved.filter(s=>s.id!==entry.id);try{localStorage.setItem('desktop-rider-schemes',JSON.stringify(next));saved=next;renderSaved();updateControls();toast('已删除方案「'+entry.name+'」');}catch{toast('删除未完成，无法写入浏览器存储');}});actions.append(load,remove);content.append(heading,date,actions);card.append(content);root.append(card);});}
+function renderSaved(){const root=$('#saved-grid');root.replaceChildren();$('#empty-saved').hidden=saved.length>0;saved.forEach(entry=>{const card=document.createElement('article');card.className='saved-card';if(typeof entry.thumbnail==='string'&&entry.thumbnail.startsWith('data:image/')){const img=new Image();img.src=entry.thumbnail;img.alt=entry.name+'壁纸预览';card.append(img);}const content=document.createElement('div');content.className='saved-card-content';const heading=document.createElement('h3');heading.textContent=entry.name;const date=document.createElement('p');date.textContent='保存于 '+new Date(entry.createdAt).toLocaleDateString('zh-CN');const actions=document.createElement('div');actions.className='saved-card-actions';const load=document.createElement('button');load.className='button secondary';load.textContent='载入方案';load.addEventListener('click',()=>{state=normalizeState(entry.state);setView('design');update({zones:true,custom:false});toast('已载入「'+entry.name+'」');});const remove=document.createElement('button');remove.className='text-button';remove.textContent='删除';remove.addEventListener('click',()=>{const next=saved.filter(s=>s.id!==entry.id);try{localStorage.setItem('desktop-rider-schemes',JSON.stringify(next));saved=next;renderSaved();updateControls();toast('已删除方案「'+entry.name+'」');}catch{toast('删除未完成，无法写入浏览器存储');}});const exp=document.createElement('button');exp.className='text-button';exp.textContent='导出';exp.addEventListener('click',()=>{exportSchemes([entry],`Desktop-Rider-${entry.name}.json`);toast('已导出「'+entry.name+'」');});actions.append(load,exp,remove);content.append(heading,date,actions);card.append(content);root.append(card);});}
 $$('[data-view]').forEach(btn=>btn.addEventListener('click',()=>setView(btn.dataset.view)));
 $('.brand').addEventListener('click',e=>{e.preventDefault();setView('design');});
 $('#show-saved').addEventListener('click',()=>setView('saved'));$('#back-design').addEventListener('click',()=>setView('design'));
@@ -361,6 +370,28 @@ function pointAt(event){const b=$('#desktop').getBoundingClientRect();return {x:
 $('#pick-split').addEventListener('click',()=>{pickingSplit=!pickingSplit;updateControls();if(pickingSplit)$('#split-picker').focus();});
 $('#split-picker').addEventListener('click',event=>{if(event.detail===0){toast('可使用横向、纵向位置滑块精确设置');return;}const p=pointAt(event);state.ratio=clampPercent(Math.round(p.x/p.w*100));state.anchorY=clampPercent(Math.round(p.y/p.h*100));pickingSplit=false;update();handle.focus();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pickingSplit){pickingSplit=false;updateControls();$('#pick-split').focus();}});
+$('#undo').addEventListener('click',undo);$('#redo').addEventListener('click',redo);
+document.addEventListener('keydown',event=>{if(!(event.ctrlKey||event.metaKey)||event.altKey)return;const k=event.key.toLowerCase();if(k!=='z'&&k!=='y')return;
+ const t=event.target,typing=t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)&&!(t.tagName==='INPUT'&&['range','checkbox','color','file','button'].includes(t.type)));if(typing)return; // text fields keep the browser's own undo
+ event.preventDefault();if(k==='y'||event.shiftKey)redo();else undo();});
+// ---- schemes as files: {app:'desktop-rider',version:1,schemes:[{id,name,createdAt,state,thumbnail}]} ----
+function exportSchemes(list,name){const blob=new Blob([JSON.stringify({app:'desktop-rider',version:1,exportedAt:new Date().toISOString(),schemes:list},null,1)],{type:'application/json'});download(blob,name);}
+const stamp=()=>new Date().toISOString().slice(0,10);
+$('#export-schemes').addEventListener('click',()=>{if(!saved.length){toast('还没有保存过方案');return;}exportSchemes(saved,`Desktop-Rider-方案-${stamp()}.json`);toast(`已导出 ${saved.length} 个方案（视频文件不包含在内）`);});
+$('#export-current').addEventListener('click',()=>{exportSchemes([{id:crypto.randomUUID(),name:'当前设计',createdAt:new Date().toISOString(),state:clone(state),thumbnail:null}],`Desktop-Rider-当前设计-${stamp()}.json`);toast('已导出当前设计');});
+$('#import-schemes').addEventListener('click',()=>$('#schemes-file').click());
+// Accepts the export format, a bare array of entries, a single entry, or a bare state. Invalid entries are skipped; ids are fresh.
+async function importSchemes(text){let data;try{data=JSON.parse(text);}catch{throw new Error('不是有效的 JSON 文件');}
+ const list=Array.isArray(data?.schemes)?data.schemes:Array.isArray(data)?data:data&&typeof data==='object'?[data]:[];const out=[];let skipped=0,videos=0;
+ for(const entry of list){const raw=entry&&typeof entry==='object'&&validState(entry.state)?entry.state:validState(entry)?entry:null;if(!raw){skipped++;continue;}
+  const st=normalizeState(raw);if(st.modules?.live?.enabled||(st.modules?.layers?.items||[]).some(it=>it.type==='video'))videos++;
+  let thumbnail=typeof entry.thumbnail==='string'&&entry.thumbnail.startsWith('data:image/')?entry.thumbnail:null;if(!thumbnail){try{thumbnail=(await wallpaperCanvas(st,480)).toDataURL('image/jpeg',.82);}catch{}}
+  out.push({id:crypto.randomUUID(),name:(typeof entry.name==='string'&&entry.name.trim()?entry.name.trim():'导入的方案').slice(0,60),createdAt:Number.isFinite(Date.parse(entry.createdAt))?entry.createdAt:new Date().toISOString(),state:st,thumbnail});}
+ if(!out.length)throw new Error(skipped?'文件里没有可用的方案':'文件里没有方案');
+ const next=[...out,...saved];try{localStorage.setItem('desktop-rider-schemes',JSON.stringify(next));}catch{throw new Error('浏览器存储空间不足，无法导入');}
+ saved=next;if(currentView==='saved')renderSaved();updateControls();return {imported:out.length,skipped,videos};}
+$('#schemes-file').addEventListener('change',async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;
+ try{const r=await importSchemes(await file.text());toast(`已导入 ${r.imported} 个方案`+(r.skipped?`，跳过 ${r.skipped} 个无效项`:'')+(r.videos?'；含视频的方案需要重新导入视频文件':''));}catch(error){toast('导入失败：'+(error.message||'文件无法读取'));}});
 let move=null;
 function endDrag(event){if(move?.pointerId===event.pointerId){move=null;$('#desktop').classList.remove('dragging-split');}}
 for(const [id,index] of [['split-handle',-1],['split-start',0],['split-end',1]]){
@@ -378,7 +409,7 @@ for(const [id,index] of [['split-handle',-1],['split-start',0],['split-end',1]])
  });
 }
 // Floating person: drag, wheel and keyboard only move the layer, not the wallpaper.
-function updateFloat(){state.preset=null;placeFloat();updateControls();persistDraft();}
+function updateFloat(){state.preset=null;placeFloat();updateControls();persistDraft();scheduleHistory();}
 function pinFloat(){const f=placeFloat();if(f)Object.assign(activeCopy(state),{x:f.x,y:f.y,size:f.size});return f;}
 const clampFloat=v=>Math.max(-20,Math.min(120,Math.round(v*10)/10)),clampSize=v=>Math.max(10,Math.min(150,Math.round(v*10)/10));
 $('#float-toggle').addEventListener('change',async e=>{
@@ -509,7 +540,7 @@ new ResizeObserver(()=>scheduleRender()).observe($('#desktop'));
 function updateClock(){const now=new Date();$('#clock').textContent=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});$('.desktop-top>span:last-child').firstChild.textContent=now.toLocaleDateString('zh-CN',{weekday:'short',month:'long',day:'numeric'})+' ';Rider.emit('tick',now);}
 updateClock();setInterval(updateClock,60000);
 // Modules (core.js): what a module may use of the app. Getters read live values.
-Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,wallpaperPlacement,piecePlacement,useImage,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
+Object.defineProperties(Rider.api,Object.getOwnPropertyDescriptors({undo,redo,importSchemes,exportSchemes,get state(){return state;},get view(){return currentView;},get saved(){return saved;},update,toast,loadImage,source,scene,floating,geometry,wallpaperPlacement,piecePlacement,useImage,scheduleRender,renderDesktop,wallpaperCanvas,setView,download,icon,clone,$,$$,persist:persistDraft,desktop:()=>$('#desktop'),createItem,moveItem,normalizeState}));
 let booted=false;
 function mountModule(mod){
  mod.panel=document.createElement('div');mod.panel.className='module-panel';mod.panel.id='module-'+mod.id;mod.panel.hidden=true;$('#module-controls').append(mod.panel);
