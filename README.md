@@ -7,7 +7,7 @@
 在本目录执行：
 
 ```sh
-python3 tools/serve.py
+npm start        # Node 开发服务器（或 python3 tools/serve.py）
 ```
 
 打开 http://127.0.0.1:4173 。服务仅监听本机回环地址。也可以使用 `npm start`。
@@ -85,7 +85,7 @@ python3 tools/serve.py
 
 ## 已验证
 
-执行 `node --check app.js` 与 `node tools/verify.cjs`。浏览器验证涵盖分裂设置、鼠标拖动、键盘调整、联动开关、导出间隙像素、模板、分区、方案保存/恢复/删除、图片导入后立即刷新、PNG 下载、390px / 1024px 页面宽度以及帮助弹窗。浏览器运行期间无未捕获错误。
+执行 `node --check app.js` 与 `node tools/verify.cjs`；`node tools/verify-all.cjs` 顺序跑全部浏览器回归。Playwright 的位置由 `tools/playwright.cjs` 解析（`npm i -D playwright pngjs`，或环境变量 `PLAYWRIGHT_PATH` / `PNGJS_PATH`），默认用系统 Chrome。给协作 AI 的上手说明见 `AGENTS.md`。浏览器验证涵盖分裂设置、鼠标拖动、键盘调整、联动开关、导出间隙像素、模板、分区、方案保存/恢复/删除、图片导入后立即刷新、PNG 下载、390px / 1024px 页面宽度以及帮助弹窗。浏览器运行期间无未捕获错误。
 
 壁纸联动专项回归：`node tools/verify-wallpaper.cjs`。使用坐标编码图片检查左右画面随比例变化、关闭联动后保持固定、零间距等分时还原原图；覆盖 24 种极端布局无露底，并比较浏览器预览与 PNG 导出中的采样像素。联动开关对比截图保存在 `artifacts/wallpaper-linked.png` 和 `artifacts/wallpaper-unlinked.png`。
 

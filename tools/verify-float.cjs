@@ -1,4 +1,4 @@
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 // Wallpaper Engine binary fixtures: length-prefixed strings for PKGV, C strings for TEXV.
@@ -18,7 +18,7 @@ const dxt5Solid=(w,h)=>Buffer.concat(Array.from({length:(w/4)*(h/4)},()=>Buffer.
 function pkg(files){const names=Object.keys(files);let offset=0;const table=[pstr('PKGV0024'),i32(names.length)];
  for(const n of names){table.push(pstr(n),i32(offset),i32(files[n].length));offset+=files[n].length;}return Buffer.concat([...table,...names.map(n=>files[n])]);}
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'desktop-rider-we-'));
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));

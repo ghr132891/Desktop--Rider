@@ -1,7 +1,7 @@
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:4173');

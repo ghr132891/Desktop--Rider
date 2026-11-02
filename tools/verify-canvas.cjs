@@ -1,10 +1,10 @@
 // Free-canvas controls: curved / wavy dividers, per-piece pictures with offset and zoom (panel, drag,
 // wheel), person-copy look (rotate / colour / glow, outline handles) and the 图层 module (shape, image,
 // transforms, blend, above/below the person, list, persistence). Runs in plain Chromium.
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const context=await browser.newContext({viewport:{width:1440,height:1050},deviceScaleFactor:1});
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=()=>page.locator('#piece-left').evaluate(el=>new Promise(resolve=>{const check=()=>el.style.backgroundImage?resolve():requestAnimationFrame(check);check();}));

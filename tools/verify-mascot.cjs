@@ -2,10 +2,10 @@
 // idle motion runs, emotes / say / mood / pose commands work and report events, interactions (tap, double tap,
 // hold = pat, rapid taps = angry, drag = carried + position saved), music reaction from the 桌面歌词 clock, editing
 // mode (pointer only in its own view, floats click-through), export paints the character, client payload, normalising.
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const page=await (await browser.newContext({viewport:{width:1440,height:1050},deviceScaleFactor:1})).newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=()=>page.locator('#piece-left').evaluate(el=>new Promise(resolve=>{const check=()=>el.style.backgroundImage?resolve():requestAnimationFrame(check);check();}));
  const settled=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));

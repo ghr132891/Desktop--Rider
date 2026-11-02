@@ -1,9 +1,9 @@
 // Client module (modules/client.js) against a fake window.desktopRider bridge, plus the
 // wallpaperCanvas layer split the Windows client relies on. Runs in plain Chromium.
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const context=await browser.newContext({viewport:{width:1440,height:1050},deviceScaleFactor:1});
  await context.addInitScript(()=>{window.__calls=[];window.desktopRider={platform:'win32',version:'0.1.0-test',
   monitors:async()=>[{id:'\\\\?\\DISPLAY#A',index:0,left:0,top:0,width:1280,height:800,primary:true},{id:'\\\\?\\DISPLAY#B',index:1,left:1280,top:0,width:1080,height:1920,primary:false}],

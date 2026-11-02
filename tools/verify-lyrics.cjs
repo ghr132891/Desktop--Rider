@@ -1,10 +1,10 @@
 // 桌面歌词 module: demo clock cycles the lines with the chosen transition, every DIY control reaches the preview
 // (font, size, colour, stroke, align, position by drag), the export paints the current line with the same look,
 // the client payload carries style in px + source, LRC parsing / merging, normalising, persistence. Plain Chromium.
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const page=await (await browser.newContext({viewport:{width:1440,height:1050},deviceScaleFactor:1})).newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=()=>page.locator('#piece-left').evaluate(el=>new Promise(resolve=>{const check=()=>el.style.backgroundImage?resolve():requestAnimationFrame(check);check();}));
  const settled=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));

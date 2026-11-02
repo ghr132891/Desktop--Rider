@@ -1,10 +1,10 @@
 // 动态壁纸 module (modules/live.js): a WebM made in the page is imported through the real file
 // input, becomes the still wallpaper and plays on canvases that mirror the wallpaper pieces;
 // switch, person-protect pause, persistence across reload, client export plan, removal.
-const {chromium}=require('/Users/tu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./playwright.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const browser=await chromium.launch({headless:true,channel:require('./playwright.cjs').channel});
  const context=await browser.newContext({viewport:{width:1440,height:1050},deviceScaleFactor:1});
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const ready=()=>page.locator('#piece-left').evaluate(el=>new Promise(resolve=>{const check=()=>el.style.backgroundImage?resolve():requestAnimationFrame(check);check();}));
@@ -80,7 +80,8 @@ const assert=require('node:assert/strict');
  assert.ok(Math.hypot(...plate.occluded.plate.map((x,i)=>x-plate.occluded.still[i]))<40,'behind the person the plate still holds the inpainted still: '+JSON.stringify(plate));
  // Keep-original: no cover, the video person stays; switch off: back to the static copy.
  await page.locator('#float-keep').check();await page.waitForFunction(()=>Rider.modules.find(x=>x.id==='live').keepOriginal===true);await page.waitForTimeout(500);
- const kept=await page.evaluate(async()=>{const m=Rider.modules.find(x=>x.id==='live'),view=await scene(clone(state)),b=view.cut.box,p=m.pieces[0];const d=p.c.getContext('2d').getImageData(Math.round((p.x+(b.x+b.w*.5)*p.w)*p.dpr),Math.round((p.y+(b.y+b.h*.5)*p.h)*p.dpr),1,1).data;const bgc=document.createElement('canvas');bgc.width=view.img.naturalWidth;bgc.height=view.img.naturalHeight;bgc.getContext('2d').drawImage(view.img,0,0);const c=bgc.getContext('2d').getImageData(Math.round((b.x+b.w*.5)*bgc.width),Math.round((b.y+b.h*.5)*bgc.height),1,1).data;return Math.hypot(d[0]-c[0],d[1]-c[1],d[2]-c[2]);});
+ // The person walks, so sample the original spot over a second and keep the largest difference from the still.
+ const kept=await page.evaluate(async()=>{const m=Rider.modules.find(x=>x.id==='live'),view=await scene(clone(state)),b=view.cut.box,p=m.pieces[0];const bgc=document.createElement('canvas');bgc.width=view.img.naturalWidth;bgc.height=view.img.naturalHeight;bgc.getContext('2d').drawImage(view.img,0,0);const c=bgc.getContext('2d').getImageData(Math.round((b.x+b.w*.5)*bgc.width),Math.round((b.y+b.h*.5)*bgc.height),1,1).data;let best=0;for(let i=0;i<10;i++){const d=p.c.getContext('2d').getImageData(Math.round((p.x+(b.x+b.w*.5)*p.w)*p.dpr),Math.round((p.y+(b.y+b.h*.5)*p.h)*p.dpr),1,1).data;best=Math.max(best,Math.hypot(d[0]-c[0],d[1]-c[1],d[2]-c[2]));await new Promise(r=>setTimeout(r,150));}return best;});
  assert.ok(kept>30,'with keep-original the video person is visible at the original spot: '+kept);
  await page.locator('#float-keep').uncheck();await page.locator('[data-view="live"]').click();await page.locator('#live-person').uncheck();
  await page.waitForFunction(()=>!document.querySelector('#desktop').classList.contains('live-person')&&document.querySelectorAll('.live-copy').length===0);
