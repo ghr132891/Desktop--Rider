@@ -6,8 +6,8 @@
 // sings the line) and exposes Rider.api.mascot — the in-page half of the external-AI hook (docs/mascot-api.md).
 const MascotModule={
  id:'mascot',name:'萌版人物',order:240,
- defaults:{enabled:false,x:84,y:92,size:30,headScale:1.7,bodyScale:.78,bodySquash:.72,flip:false,shadow:true,blush:true,eyes:false,mouth:false,mouthX:0,mouthY:0,reactMusic:true,singBubble:true,idle:true,onTop:true},
- normalize(m,{clamp,defaults:d}){return {enabled:m.enabled===true,x:clamp(m.x,0,100,d.x),y:clamp(m.y,0,100,d.y),size:clamp(m.size,8,80,d.size),headScale:clamp(m.headScale,1,2.6,d.headScale),bodyScale:clamp(m.bodyScale,.4,1.2,d.bodyScale),bodySquash:clamp(m.bodySquash,.4,1,d.bodySquash),
+ defaults:{enabled:false,x:84,y:92,size:30,headScale:1.7,bodyScale:.78,bodySquash:.72,neck:0,flip:false,shadow:true,blush:true,eyes:false,mouth:false,mouthX:0,mouthY:0,reactMusic:true,singBubble:true,idle:true,onTop:true},
+ normalize(m,{clamp,defaults:d}){return {enabled:m.enabled===true,x:clamp(m.x,0,100,d.x),y:clamp(m.y,0,100,d.y),size:clamp(m.size,8,80,d.size),headScale:clamp(m.headScale,1,2.6,d.headScale),bodyScale:clamp(m.bodyScale,.4,1.2,d.bodyScale),bodySquash:clamp(m.bodySquash,.4,1,d.bodySquash),neck:clamp(m.neck,-.2,.2,0),
   flip:m.flip===true,shadow:m.shadow!==false,blush:m.blush!==false,eyes:m.eyes===true,mouth:m.mouth===true,mouthX:clamp(m.mouthX,-.3,.3,0),mouthY:clamp(m.mouthY,-.3,.3,0),reactMusic:m.reactMusic!==false,singBubble:m.singBubble!==false,idle:m.idle!==false,onTop:m.onTop!==false};},
  view:{label:'萌版人物',icon:'face',title:'把壁纸里的人物变成桌面上的小伙伴。',description:'用抠出来的人物做一个大头小身的萌版角色，悬浮在桌面上：会呼吸、眨眼、发呆、睡着；戳一下开心、连戳会生气、按住摸头会害羞；听到歌词会跟着节奏摇摆、唱出当前句。外部 AI 可以通过接口精细控制它。',inspectorTitle:'人物设置'},
  rigKey:'',rig:null,rigError:'',building:false,face:null,log:[],
@@ -19,6 +19,7 @@ const MascotModule={
 <div class="slider-control"><div class="control-label"><label for="mc-head">头的比例</label><output id="mc-head-value">1.7×</output></div><input id="mc-head" type="range" min="1" max="2.6" step=".05" value="1.7"></div>
 <div class="slider-control"><div class="control-label"><label for="mc-body">身体大小</label><output id="mc-body-value">0.78×</output></div><input id="mc-body" type="range" min=".4" max="1.2" step=".02" value=".78"></div>
 <div class="slider-control"><div class="control-label"><label for="mc-squash">身体压扁</label><output id="mc-squash-value">0.72×</output></div><input id="mc-squash" type="range" min=".4" max="1" step=".02" value=".72"></div>
+<div class="slider-control"><div class="control-label"><label for="mc-neck">头身切分位置</label><output id="mc-neck-value">自动</output></div><input id="mc-neck" type="range" min="-.2" max=".2" step=".01" value="0"><div class="range-labels"><span>往上（头更小）</span><span>往下（头含肩）</span></div></div>
 <div class="switch-row"><div><label for="mc-flip">左右翻转</label></div><input type="checkbox" id="mc-flip" class="switch"></div>
 <div class="switch-row"><div><label for="mc-shadow">脚下阴影</label></div><input type="checkbox" id="mc-shadow" class="switch" checked></div></details>
 <details class="shape-options" id="mc-face" open><summary>表情贴纸</summary>
@@ -38,7 +39,7 @@ const MascotModule={
 <pre id="mc-log" class="mc-log" aria-live="polite"></pre></details>`;
   const $=q=>panel.querySelector(q),me=()=>api.state.modules.mascot,changed=()=>api.update({custom:false});
   const bind=(id,key,read)=>{const el=$(id);el.addEventListener(el.type==='checkbox'?'change':'input',e=>{me()[key]=read?read(e.target):Number(e.target.value);changed();});};
-  bind('#mc-enabled','enabled',t=>t.checked);bind('#mc-size','size');bind('#mc-head','headScale');bind('#mc-body','bodyScale');bind('#mc-squash','bodySquash');bind('#mc-flip','flip',t=>t.checked);bind('#mc-shadow','shadow',t=>t.checked);
+  bind('#mc-enabled','enabled',t=>t.checked);bind('#mc-size','size');bind('#mc-head','headScale');bind('#mc-body','bodyScale');bind('#mc-squash','bodySquash');bind('#mc-neck','neck');bind('#mc-flip','flip',t=>t.checked);bind('#mc-shadow','shadow',t=>t.checked);
   bind('#mc-blush','blush',t=>t.checked);bind('#mc-eyes','eyes',t=>t.checked);bind('#mc-mouth','mouth',t=>t.checked);bind('#mc-mouth-x','mouthX');bind('#mc-mouth-y','mouthY');bind('#mc-music','reactMusic',t=>t.checked);bind('#mc-sing','singBubble',t=>t.checked);bind('#mc-idle','idle',t=>t.checked);bind('#mc-top','onTop',t=>t.checked);
   panel.querySelector('.mc-try').addEventListener('click',e=>{const b=e.target.closest('[data-emote]');if(!b)return;this.command(b.dataset.emote==='wake'?{type:'wake'}:{type:'emote',name:b.dataset.emote});});
   $('#mc-say-go').addEventListener('click',()=>{const t=$('#mc-say').value.trim();if(t){this.command({type:'say',text:t});$('#mc-say').value='';}});
@@ -57,16 +58,16 @@ const MascotModule={
  clientInfo:null,setClientInfo(info){this.clientInfo=info&&info.url?info:null;const panel=document.querySelector('#module-mascot');if(panel&&this.api)this.sync({s:this.api.state,panel});},
  onView({view,api}){const editing=view==='mascot';api.desktop().classList.toggle('mascot-editing',editing);if(this.layer)this.layer.style.zIndex=editing?'35':'18';this.mv.setStyle({interactive:editing});},
  sync({s,panel}){const m=s.modules.mascot,q=sel=>panel.querySelector(sel),set=(sel,v)=>{const el=q(sel);if(document.activeElement!==el)el.value=v;};
-  q('#mc-enabled').checked=m.enabled;set('#mc-size',m.size);q('#mc-size-value').textContent=m.size+'%';set('#mc-head',m.headScale);q('#mc-head-value').textContent=m.headScale.toFixed(2).replace(/0$/,'')+'×';set('#mc-body',m.bodyScale);q('#mc-body-value').textContent=m.bodyScale.toFixed(2)+'×';set('#mc-squash',m.bodySquash);q('#mc-squash-value').textContent=m.bodySquash.toFixed(2)+'×';
+  q('#mc-enabled').checked=m.enabled;set('#mc-size',m.size);q('#mc-size-value').textContent=m.size+'%';set('#mc-head',m.headScale);q('#mc-head-value').textContent=m.headScale.toFixed(2).replace(/0$/,'')+'×';set('#mc-body',m.bodyScale);q('#mc-body-value').textContent=m.bodyScale.toFixed(2)+'×';set('#mc-squash',m.bodySquash);q('#mc-squash-value').textContent=m.bodySquash.toFixed(2)+'×';set('#mc-neck',m.neck);q('#mc-neck-value').textContent=m.neck?(m.neck>0?'+':'')+Math.round(m.neck*100)+'%':'自动';
   q('#mc-flip').checked=m.flip;q('#mc-shadow').checked=m.shadow;q('#mc-blush').checked=m.blush;q('#mc-eyes').checked=m.eyes;q('#mc-mouth').checked=m.mouth;panel.querySelectorAll('.mc-mouth-only').forEach(el=>el.hidden=!m.mouth);set('#mc-mouth-x',m.mouthX);q('#mc-mouth-x-value').textContent=m.mouthX.toFixed(2);set('#mc-mouth-y',m.mouthY);q('#mc-mouth-y-value').textContent=m.mouthY.toFixed(2);
   q('#mc-music').checked=m.reactMusic;q('#mc-sing').checked=m.singBubble;q('#mc-idle').checked=m.idle;q('#mc-top').checked=m.onTop;
   q('#mc-status').textContent=(this.rigError?this.rigError:this.building?'正在抠出人物并识别面部…':this.rig?(this.rig.face.detected?'已生成萌版人物，识别到面部，贴纸按五官位置摆放':'已生成萌版人物；没识别到面部，贴纸按估计位置摆放'):m.enabled?'等待人物…':'打开后会用壁纸里的人物生成')+(this.clientInfo?` · 外部 AI 接口：${this.clientInfo.url}/api/mascot/… 令牌 ${this.clientInfo.token}`:'');},
  // ---- rig from the cut-out person (cached by picture + points + proportions) ----
- async ensureRig(s){const m=s.modules.mascot,src=this.api.source(s),key=[src.length,src.slice(-64),JSON.stringify(s.floatPoints||[]),m.headScale,m.bodyScale,m.bodySquash].join('|');if(key===this.rigKey)return;this.rigKey=key;this.rig=null;this.rigError='';this.building=true;this.api.update({custom:false});
+ async ensureRig(s){const m=s.modules.mascot,src=this.api.source(s),key=[src.length,src.slice(-64),JSON.stringify(s.floatPoints||[]),m.headScale,m.bodyScale,m.bodySquash,m.neck].join('|');if(key===this.rigKey)return;this.rigKey=key;this.rig=null;this.rigError='';this.building=true;this.api.update({custom:false});
   try{const img=await this.api.loadImage(src);let points=Array.isArray(s.floatPoints)&&s.floatPoints.length?s.floatPoints:null;if(!points){const p=await Cutout.autoPoint(img);points=p?[p]:[];}
    const cut=await Cutout.separate(img,src,points);if(cut.empty)throw new Error('没有抠出人物：先在「人物悬浮」里选一下人物');
    let face=null;try{const faces=await Portrait.detectFace(await createImageBitmap(cut.cutout));face=(Array.isArray(faces)?faces:faces?.faces||[]).sort((a,b)=>(b.score||0)-(a.score||0))[0]||null;}catch{}
-   const rig=MascotView.buildRig(cut.cutout,{face,headScale:m.headScale,bodyScale:m.bodyScale,bodySquash:m.bodySquash});if(!rig)throw new Error('人物太小，无法生成');
+   const rig=MascotView.buildRig(cut.cutout,{face,headScale:m.headScale,bodyScale:m.bodyScale,bodySquash:m.bodySquash,neckAdjust:m.neck});if(!rig)throw new Error('人物太小，无法生成');
    if(this.rigKey!==key)return;this.rig=rig;this.face=face;}
   catch(error){if(this.rigKey!==key)return;this.rigError=error.message||'生成失败';}
   finally{if(this.rigKey===key){this.building=false;this.api.scheduleRender();this.api.update({custom:false});}}},

@@ -14,6 +14,7 @@
 | `move` | `left`、`top`（像素数或 CSS 长度） | 移动脚下位置 |
 | `style` | `patch`（size、flip、shadow、stickers:{blush,eyes,mouth}、mouthOffset:{x,y}、singBubble…） | 改外观 |
 | `phrases` | `phrases:{tap:[…],pat:[…],angry:[…],cheer:[…],surprise:[…],shy:[…],sleep:[…],wake:[…],drag:[…],drop:[…],dance:[…],idle:[…]}` | 换台词库 |
+| `rig` | `rig:{head:{url,x,y,w,h,pivot:{x,y}},body:{url,x,y,w,h},width,height,face:{eyes,mouth,blush,size}}` | 换一套头 / 身部件（PNG data URL + 合成坐标，格式同 `/api/mascot/rig` 返回的），例如外部 AI 生成的全身 Q 版 |
 | `wake` | — | 叫醒 |
 | `state` | — | 返回当前状态 |
 
@@ -54,3 +55,14 @@ Invoke-RestMethod -Method Post -Uri "$($t.url)/api/mascot/command" -Headers @{Au
 ## 安全
 
 接口只监听 127.0.0.1，令牌随机生成且只存在本机；指令中的文本会被截断，不会被当作代码执行。
+
+## 做一个全身的萌版（外部 AI 流程）
+
+壁纸里的人物多半只有半身，本地算法只能把现有像素切成头、身两块再重拼，补不出没画出来的腿脚；"认出人物并补全全身"需要生成式模型，目前 GitHub 上没有一键的开源方案，但可以用现成组件拼：
+
+1. 从 `GET /api/mascot/rig`（或网页 `Rider.api.mascot.rig()`）拿到抠出的人物 PNG。
+2. 用 Stable Diffusion / ComfyUI 生成全身 Q 版：SDXL 动漫底模 + **IP-Adapter / IP-Adapter-FaceID**（保持人物长相与配色，见 [h94/IP-Adapter-FaceID](https://huggingface.co/h94/IP-Adapter-FaceID)）+ **ControlNet OpenPose**（给一个站立的全身骨架）+ chibi / 缩放类 LoRA（如 [envy-zoom-slider-xl](https://huggingface.co/e-n-v-y/envy-zoom-slider-xl-01) 推到全身构图）；参考 [makeanime](https://github.com/arig23498/makeanime) 这类把人脸 + 风格参考喂给 IP-Adapter 的脚本。直接 img2img 外扩往往要么拉长原图要么丢失长相，IP-Adapter 走 txt2img 更稳。
+3. 把生成图抠背景（可以回传给本应用的抠图，或用 rembg），再用 `MascotView.buildRig(图, {face})` 切头身（在网页里或 Node 里调用），也可以自己分层。
+4. `POST /api/mascot/command` 发 `{type:'rig',rig:{…}}`，人物立即换成全身版；想持久化就把它存进自己的方案里重新应用。
+
+想要更"活"的面部（转头、眨眼、嘴型由神经网络生成），可以接 [talking-head-anime-3](https://github.com/pkhungurn/talking-head-anime-3-demo)（单张 512×512 动漫立绘即可，需要 GPU），把它的输出帧通过 `rig` 指令或自己的渲染喂进来。单图自动绑骨的开源项目如 [img2rig](https://github.com/SSnemo/img2rig)、分层工具 see-through 也可作为部件来源。

@@ -20,21 +20,27 @@
   return {rows,top,bottom,left,right};}
  // Where the head ends: the chin from the face box when we have one, else the narrowest row (neck) under the first
  // width peak (the head) in the upper part of the figure.
- function headBottom(prof,h,face){if(face&&face.box){return clamp(Math.round((face.box.y+face.box.h*1.22)*h),prof.top+8,prof.bottom-8);}
-  const {rows,top,bottom}=prof,span=bottom-top;let peak=top,peakW=0;for(let y=top;y<top+span*.4;y++)if(rows[y].n>peakW){peakW=rows[y].n;peak=y;}
-  let neck=-1,neckW=Infinity;for(let y=peak;y<Math.min(bottom,peak+span*.3);y++){if(rows[y].n<neckW){neckW=rows[y].n;neck=y;}}
-  if(neck>0&&neckW<peakW*.82)return neck;return Math.round(top+span*.27);}
- function part(src,x0,y0,x1,y1){const c=document.createElement('canvas');c.width=Math.max(1,x1-x0);c.height=Math.max(1,y1-y0);c.getContext('2d').drawImage(src,x0,y0,c.width,c.height,0,0,c.width,c.height);return c;}
+ function headBottom(prof,h,face,neckAdjust=0){const {rows,top,bottom}=prof,span=bottom-top;let cut;
+  // Face box: from the chin look a little way down for the first narrowing (the neck); stop as soon as the width grows again (shoulders).
+  if(face&&face.box){const chin=Math.round((face.box.y+face.box.h*1.1)*h),deep=Math.min(bottom-8,Math.round(chin+face.box.h*h*.45));let neck=chin,neckW=Infinity;for(let y=Math.max(top+8,chin);y<=deep;y++){const n=rows[y].n;if(!n)continue;if(n<neckW){neckW=n;neck=y;}else if(n>neckW*1.08)break;}cut=neck;}
+  else{let peak=top,peakW=0;for(let y=top;y<top+span*.4;y++)if(rows[y].n>peakW){peakW=rows[y].n;peak=y;}let neck=-1,neckW=Infinity;for(let y=peak;y<Math.min(bottom,peak+span*.3);y++){if(rows[y].n<neckW){neckW=rows[y].n;neck=y;}}cut=neck>0&&neckW<peakW*.82?neck:Math.round(top+span*.27);}
+  return clamp(Math.round(cut+neckAdjust*span),top+8,bottom-8);}
+ // fade: {from,to,out} rows in part coordinates — out: keep rows above `from`, fade 1→0 across; else keep rows below `to`, fade 0→1 across
+ function part(src,x0,y0,x1,y1,fade){const w=Math.max(1,x1-x0),h=Math.max(1,y1-y0),c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(src,x0,y0,w,h,0,0,w,h);
+  if(fade&&fade.to>fade.from){const m=document.createElement('canvas');m.width=w;m.height=h;const mx=m.getContext('2d');mx.fillStyle='#000';if(fade.out)mx.fillRect(0,0,w,Math.max(0,fade.from));else mx.fillRect(0,fade.to,w,Math.max(0,h-fade.to));
+   const g=mx.createLinearGradient(0,fade.from,0,fade.to);g.addColorStop(0,fade.out?'rgba(0,0,0,1)':'rgba(0,0,0,0)');g.addColorStop(1,fade.out?'rgba(0,0,0,0)':'rgba(0,0,0,1)');mx.fillStyle=g;mx.fillRect(0,fade.from,w,fade.to-fade.from);
+   ctx.globalCompositeOperation='destination-in';ctx.drawImage(m,0,0);ctx.globalCompositeOperation='source-over';}
+  return c;}
  // cutout: canvas/image with alpha. opts: {face:{box:{x,y,w,h},keypoints:[{x,y}…]} normalised to the cutout, headScale, bodyScale, bodySquash}
- function buildRig(cutout,{face=null,headScale=1.7,bodyScale=.78,bodySquash=.72}={}){
+ function buildRig(cutout,{face=null,headScale=1.7,bodyScale=.78,bodySquash=.72,neckAdjust=0}={}){
   const w=cutout.width||cutout.naturalWidth,h=cutout.height||cutout.naturalHeight,c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(cutout,0,0);
   const prof=alphaRows(ctx,w,h);if(prof.top<0)return null;
-  const hb=headBottom(prof,h,face),overlap=Math.round((prof.bottom-prof.top)*.03);
+  const hb=headBottom(prof,h,face,neckAdjust),overlap=Math.max(2,Math.round((prof.bottom-prof.top)*.03));
   let hl=w,hr=-1;for(let y=prof.top;y<=hb;y++){const r=prof.rows[y];if(r.n){if(r.l<hl)hl=r.l;if(r.r>hr)hr=r.r;}}
   let bl=w,br=-1;for(let y=hb;y<=prof.bottom;y++){const r=prof.rows[y];if(r.n){if(r.l<bl)bl=r.l;if(r.r>br)br=r.r;}}
   if(hr<0||br<0)return null;
   const neckRow=prof.rows[hb],neckX=neckRow.n?(neckRow.l+neckRow.r)/2:(hl+hr)/2;
-  const headC=part(c,hl,prof.top,hr+1,hb+overlap),bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1);
+  const headC=part(c,hl,prof.top,hr+1,hb+overlap,{from:hb-prof.top,to:hb-prof.top+overlap,out:true}),bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1,{from:0,to:overlap,out:false});
   // Composite: body neck at the origin, head hanging from the same point, then shift to positive coordinates.
   const hs=headScale,bs=bodyScale,sq=bodySquash;
   const head={w:headC.width*hs,h:headC.height*hs,x:-(neckX-hl)*hs,y:-(headC.height-overlap)*hs},body={w:bodyC.width*bs,h:bodyC.height*bs*sq,x:-(neckX-bl)*bs,y:-overlap*bs*sq};
@@ -44,7 +50,7 @@
   let f={eyes:[{x:.36,y:.52},{x:.64,y:.52}],mouth:{x:.5,y:.74},blush:[{x:.27,y:.64},{x:.73,y:.64}],size:.18,detected:false};
   if(face&&face.keypoints&&face.keypoints.length>=4){const k=face.keypoints.map(p=>({x:(p.x*w-hl)/headC.width,y:(p.y*h-prof.top)/headC.height})),eyeW=Math.hypot(k[1].x-k[0].x,k[1].y-k[0].y);
    f={eyes:[k[0],k[1]],mouth:k[3],blush:[{x:k[0].x-eyeW*.15,y:k[0].y+eyeW*.55},{x:k[1].x+eyeW*.15,y:k[1].y+eyeW*.55}],size:clamp(eyeW*.9,.08,.35),detected:true};}
-  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:(headC.height-overlap)*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq}};}
+  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:(headC.height-overlap)*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq,neckAdjust},cut:(hb-prof.top)/(prof.bottom-prof.top)};}
  // ---- phrases (overridable through command {type:'phrases'}) ----
  const PHRASES={tap:['嘿！','在呢~','嗯？','戳我干嘛呀'],pat:['好舒服…','再摸摸~','嘿嘿'],angry:['别戳啦！','生气了哦！','哼！'],cheer:['耶——！','太棒了！'],surprise:['哇！','诶？'],shy:['别看我啦…','讨厌~'],sleep:['Zz…','呼…呼…'],wake:['醒啦！','嗯…早'],drag:['哇哇哇——','放我下来~'],drop:['呼——','头好晕'],dance:['这首我会！','一起摇~'],idle:['今天也要加油哦','在想什么呢？','要不要听首歌？','……']};
  const FX={heart:'❤',note:'♪',note2:'♫',spark:'✦',anger:'💢',zz:'z',sweat:'💧',ex:'!',q:'?'};
@@ -94,6 +100,7 @@
     case 'move':if(cmd.left!==undefined)view.style.left=typeof cmd.left==='number'?cmd.left+'px':String(cmd.left);if(cmd.top!==undefined)view.style.top=typeof cmd.top==='number'?cmd.top+'px':String(cmd.top);view.layout();return {ok:true};
     case 'style':view.setStyle(cmd.patch||{});return {ok:true};
     case 'phrases':for(const [k,v] of Object.entries(cmd.phrases||{}))if(Array.isArray(v))view.phrases[k]=v.map(String).slice(0,20);return {ok:true};
+    case 'rig':if(!cmd.rig||!cmd.rig.head||!cmd.rig.body)return {ok:false,error:'rig needs head and body parts'};view.setRig(cmd.rig);return {ok:true};
     case 'wake':view.wake();return {ok:true};
     case 'state':return {ok:true,state:view.state()};
     default:return {ok:false,error:'unknown command type: '+cmd.type};}};

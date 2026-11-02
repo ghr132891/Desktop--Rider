@@ -13,8 +13,13 @@ const assert=require('node:assert/strict');
  await page.goto('http://127.0.0.1:4173');await page.evaluate(()=>{localStorage.clear();});await page.reload();await ready();
  // Rig pieces in isolation: a synthetic figure (round head on a narrower body) splits at the neck without a face box.
  const rig=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=200;c.height=400;const x=c.getContext('2d');x.fillStyle='#c96';x.beginPath();x.arc(100,70,60,0,Math.PI*2);x.fill();x.fillRect(85,120,30,30);x.fillStyle='#36c';x.fillRect(50,150,100,230);
-  const r=MascotView.buildRig(c,{headScale:2,bodyScale:.5,bodySquash:.5});return r&&{headH:Math.round(r.head.h),bodyH:Math.round(r.body.h),w:Math.round(r.width),h:Math.round(r.height),face:r.face.detected,pivot:r.head.pivot,bodyBelowHead:r.body.y>r.head.y};});
+  const r=MascotView.buildRig(c,{headScale:2,bodyScale:.5,bodySquash:.5});const alphaAt=(url,fy)=>new Promise(res=>{const im=new Image();im.onload=()=>{const k=document.createElement('canvas');k.width=im.width;k.height=im.height;const g=k.getContext('2d');g.drawImage(im,0,0);const d=g.getImageData(0,Math.min(im.height-1,Math.round(im.height*fy)),im.width,1).data;let a=0;for(let i=3;i<d.length;i+=4)a=Math.max(a,d[i]);res(a);};im.src=url;});
+  return r&&(async()=>({headH:Math.round(r.head.h),bodyH:Math.round(r.body.h),w:Math.round(r.width),h:Math.round(r.height),face:r.face.detected,pivot:r.head.pivot,bodyBelowHead:r.body.y>r.head.y,cut:r.cut,bodyTopAlpha:await alphaAt(r.body.url,0),bodyMidAlpha:await alphaAt(r.body.url,.5),headBottomAlpha:await alphaAt(r.head.url,.995),
+   // a face box deep in the figure moves the cut to the neck under it; the nudge moves it further
+   faceCut:MascotView.buildRig(c,{face:{box:{x:.2,y:.05,w:.6,h:.25},keypoints:[{x:.4,y:.15},{x:.6,y:.15},{x:.5,y:.2},{x:.5,y:.25},{x:.3,y:.17},{x:.7,y:.17}]}}).cut,nudged:MascotView.buildRig(c,{neckAdjust:.1}).cut}))();});
  assert.ok(rig,'rig built');assert.equal(rig.face,false);assert.ok(rig.headH>rig.bodyH,'chibi: the head is taller than the squashed body: '+JSON.stringify(rig));assert.ok(rig.bodyBelowHead);
+ assert.ok(rig.cut>.3&&rig.cut<.45,'the cut sits at the neck of the synthetic figure: '+rig.cut);assert.ok(rig.bodyTopAlpha<40&&rig.bodyMidAlpha>200&&rig.headBottomAlpha<40,'feathered seam: body fades in from the top, head fades out at the bottom: '+JSON.stringify(rig));
+ assert.ok(Math.abs(rig.faceCut-rig.cut)<.08,'with a face box the cut still lands at the neck: '+rig.faceCut);assert.ok(Math.abs(rig.nudged-rig.cut-.1)<.02,'neckAdjust moves the cut: '+rig.nudged);
  // Module: the portrait wallpaper's person becomes the character; BlazeFace finds the face.
  await page.evaluate(()=>{state={...clone(defaults),wallpaper:'portrait',mode:'single'};update({zones:true});});await ready();
  await page.locator('[data-view="mascot"]').click();await page.waitForSelector('#module-mascot #mc-enabled');await page.evaluate(()=>document.querySelectorAll('#module-mascot details').forEach(d=>d.open=true));
@@ -26,6 +31,11 @@ const assert=require('node:assert/strict');
  // Proportions follow the sliders (the rig is rebuilt).
  const before=m;await page.locator('#mc-head').fill('2.4');await page.waitForFunction(h=>{const m=Rider.modules.find(x=>x.id==='mascot');return m.rig&&Math.round(m.rig.head.h)!==h;},before.head,{timeout:60000});m=await mod();assert.ok(m.head>before.head,'head scale grows the head');
  assert.equal(await page.evaluate(()=>state.modules.mascot.headScale),2.4);
+ // Manual cut slider rebuilds the rig; an external rig can replace the parts through the command API.
+ const cut0=await page.evaluate(()=>Rider.modules.find(x=>x.id==='mascot').rig.cut);await page.locator('#mc-neck').fill('0.1');await page.waitForFunction(c=>{const m=Rider.modules.find(x=>x.id==='mascot');return m.rig&&m.rig.cut!==c;},cut0,{timeout:60000});
+ assert.ok((await page.evaluate(()=>Rider.modules.find(x=>x.id==='mascot').rig.cut))>cut0,'the neck slider moves the cut down');assert.match(await page.locator('#mc-neck-value').textContent(),/\+10%/);
+ const swapped=await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='mascot'),own=m.mv.rig;const r=Rider.api.mascot.command({type:'rig',rig:{...own,width:own.width*2}});const after=m.mv.rig.width;const bad=Rider.api.mascot.command({type:'rig',rig:{}});m.mv.setRig(own);return {ok:r.ok,after,before:own.width,bad:bad.ok};});
+ assert.equal(swapped.ok,true);assert.equal(swapped.after,swapped.before*2);assert.equal(swapped.bad,false);
  // Idle motion: transforms change over time.
  const tf=()=>page.evaluate(()=>document.querySelector('.m-headwrap').style.transform);const t1=await tf();await page.waitForTimeout(400);const t2=await tf();assert.notEqual(t1,t2,'the head moves on its own');
  // Commands and events.
@@ -63,5 +73,5 @@ const assert=require('node:assert/strict');
  assert.deepEqual(await page.evaluate(()=>{const m=normalizeState({...state,modules:{...state.modules,mascot:{enabled:'y',size:999,headScale:0,mouthX:5,onTop:'no'}}}).modules.mascot;return [m.enabled,m.size,m.headScale,m.mouthX,m.onTop];}),[false,80,1,.3,true]);
  await page.waitForTimeout(400);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('desktop-rider-draft')).modules.mascot.headScale),2.4);
  assert.deepEqual(errors,[]);await browser.close();
- console.log('PASS: 萌版人物 — rig from a synthetic figure and from the portrait (face found, stickers placed), chibi sliders rebuild the rig, idle motion, commands (emote/say/mood/pose) + events, tap / hold-pat / rapid-taps-angry / drag-saves-position, music reaction from the 桌面歌词 clock, editing mode in/out, export paints the character, client payload, normalising, persistence; no page errors.');
+ console.log('PASS: 萌版人物 — rig from a synthetic figure (neck cut, feathered seam, face-box cut, neckAdjust) and from the portrait (face found, stickers placed), chibi + cut sliders rebuild the rig, rig command swaps parts, idle motion, commands (emote/say/mood/pose) + events, tap / hold-pat / rapid-taps-angry / drag-saves-position, music reaction from the 桌面歌词 clock, editing mode in/out, export paints the character, client payload, normalising, persistence; no page errors.');
 })().catch(e=>{console.error(e);process.exit(1)});
