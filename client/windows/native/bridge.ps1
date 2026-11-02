@@ -1,4 +1,4 @@
-# Desktop Rider native bridge for Windows 10 / 11. Called by lib/native.js with
+﻿# Desktop Rider native bridge for Windows 10 / 11. Called by lib/native.js with
 #   bridge.ps1 -Command monitors
 #   bridge.ps1 -Command set-wallpaper -MonitorId <id> -Path <png>
 #   bridge.ps1 -Command attach-layer -Hwnd <n> -Left <x> -Top <y> -Width <w> -Height <h>
@@ -12,6 +12,7 @@
 # Prints one JSON document on stdout; any failure goes to stderr with exit code 1.
 # Needs only Windows PowerShell 5.1 (present on every Win10/11) — the C# below is
 # compiled in memory by Add-Type, no SDK required.
+# Keep UTF-8 BOM: Windows PowerShell 5.1 otherwise decodes Chinese C# strings using the system ANSI code page.
 param(
   [Parameter(Mandatory=$true)][ValidateSet('monitors','set-wallpaper','attach-layer','detach-layer','get-wallpaper','layer-info','covering','watch','media','watch-media')][string]$Command,
   [string]$MonitorId,[string]$Path,[long]$Hwnd=0,[int]$Left=0,[int]$Top=0,[int]$Width=0,[int]$Height=0

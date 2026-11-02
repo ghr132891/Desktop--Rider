@@ -3,6 +3,11 @@
 // handle conversion, JSON parsing and the loopback static server. Runs on any OS.
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),http=require('node:http');
 const native=require('../lib/native'),server=require('../lib/server');
+test('native bridge declares UTF-8 for Windows PowerShell 5.1 on non-UTF-8 systems',()=>{
+ const source=require('node:fs').readFileSync(native.SCRIPT);
+ // Without a BOM, legacy PowerShell decodes the embedded C# using the system ANSI code page.
+ assert.deepEqual([...source.subarray(0,3)],[0xef,0xbb,0xbf],'bridge.ps1 must retain its UTF-8 BOM');
+});
 const get=url=>new Promise((resolve,reject)=>http.get(url,res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));}).on('error',reject));
 
 test('bridge arguments are passed as parameters, never interpolated',()=>{

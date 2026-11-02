@@ -113,7 +113,7 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   //     cycles becomes a layer above the person at a known spot (rotated, rounded); after applying, the layer window's
   //     canvas changes at the clip's centre between two reads while the wallpaper beside it stays put.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=160;c.height=160;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
-   rec.onstop=()=>Rider.modules.find(m=>m.id==='layers').addVideo(new File([new Blob(chunks)],'cycle.webm',{type:'video/webm'})).then(resolve,reject);
+   rec.onstop=()=>{const file=new File(chunks,'cycle.webm',{type:'video/webm'});Rider.modules.find(m=>m.id==='layers').addVideo(file).then(resolve,error=>reject(new Error(`${error.message}; recorded bytes=${file.size}, visibility=${document.visibilityState}, codec=${rec.mimeType}`)));};
    let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers'),it=m.me().items.at(-1);Object.assign(it,{x:75,y:25,w:20,h:24,above:true,rotate:15,radius:20,blend:'normal',opacity:100});m.changed();});
   await page.waitForFunction(()=>document.querySelectorAll('.layer-item video').length===1&&!document.querySelector('.layer-item video').paused,null,{timeout:30000});log('video layer added',{item:await page.evaluate(()=>({...state.modules.layers.items.at(-1)}))});
@@ -145,17 +145,22 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers');m.remove(m.me().items.at(-1));});await page.waitForFunction(()=>state.modules.layers.items.length===0);
   assert.deepEqual(errors,[],'no page errors after the clip step');
 
-  // 3d. 桌面歌词 (modules/lyrics.js): manual LRC with three lines, green 5 % text, fade. The runner has no media session,
-  //     so the layer window runs its own clock: the shown line cycles through all three; style arrives in px.
+  // 3d. 桌面歌词 (modules/lyrics.js): manual LRC with three lines, green 5 % text, fade.
+  // Isolate the own-clock scenario inside this test window: a real PC may have a paused music player.
   await page.evaluate(()=>{Object.assign(state.modules.lyrics,{enabled:true,mode:'manual',display:'karaoke',highlight:'#ff00ff',lrc:'[0,1500]第一句歌词(0,1500)\n[1500,1500]第二(1500,700)句歌词(2200,800)\n[3000,1500]第三句歌词(3000,1500)',size:5,color:'#00ff00',transition:'fade',duration:.3,y:30});update({custom:false});document.querySelector('#client-status').textContent='';});
   await page.locator('.client-monitor').nth(primary.index).click();
   await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
   const lyricsStatus=await page.locator('#client-status').textContent();log('lyrics apply status',{status:lyricsStatus});assert.match(lyricsStatus,/（含桌面层）$/);
   const lyricsLayers=await page.evaluate(()=>desktopRider.layers());log('lyrics layers',{layers:lyricsLayers});assert.equal(lyricsLayers[0].lyrics?.mode,'manual');assert.equal(lyricsLayers[0].lyrics?.lines,3);
+  await layerWin().waitForFunction(()=>window.__lyrics.ready);
+  await layerWin().evaluate(()=>{window.__testSetMedia=window.__setMedia;window.__setMedia=()=>window.__testSetMedia(null);window.__setMedia(null);});
   await until(page,async()=>true,'noop',1000).catch(()=>{});const lyricSeen=new Set();let lyricStyle=null,wordFill=false;for(let i=0;i<20;i++){const r=await layerWin().evaluate(()=>{const b=document.getElementById('lyrics'),cs=getComputedStyle(b),ws=[...b.querySelectorAll('.lyrics-line.in .lw')].map(w=>Number(w.style.getPropertyValue('--p')));return {ready:window.__lyrics.ready,line:b.querySelector('.lyrics-line.in')?.textContent||'',hidden:b.hidden,fontSize:parseFloat(cs.fontSize),color:cs.color,transition:b.dataset.transition,display:b.dataset.display,hl:b.style.getPropertyValue('--lyr-hl'),words:ws,sheet:[...document.styleSheets].some(x=>(x.href||'').includes('lyrics-view.css')),media:window.__lyrics.media,ticks:window.__lyrics.ticks};});lyricStyle=r;if(r.line)lyricSeen.add(r.line);if(r.words.some(p=>p>0&&p<1))wordFill=true;await page.waitForTimeout(300);}
   log('lyrics in the layer window',{seen:[...lyricSeen],style:lyricStyle});
   assert.ok(['第一句歌词','第二句歌词','第三句歌词'].every(t=>lyricSeen.has(t)),'the layer window cycles through the lines on its own clock: '+[...lyricSeen].join('|'));
   assert.equal(lyricStyle.ready,true,'lyrics-view.js loaded from the web root');assert.equal(lyricStyle.sheet,true,'lyrics-view.css loaded');assert.equal(lyricStyle.hidden,false);assert.ok(Math.abs(lyricStyle.fontSize-primary.height*.05)<1,'5 % of the monitor height in px: '+lyricStyle.fontSize);assert.equal(lyricStyle.color,'rgb(0, 255, 0)');assert.equal(lyricStyle.transition,'fade');assert.equal(lyricStyle.display,'karaoke');assert.equal(lyricStyle.hl,'#ff00ff');assert.ok(wordFill,'karaoke: a word was mid-fill in the layer window');assert.equal(lyricStyle.media,null,'no media session on the runner → own clock');
+  // Also verify a paused media position reaches the correct line, then restore the real watcher delivery.
+  await layerWin().evaluate(()=>{window.__setMedia=window.__testSetMedia;delete window.__testSetMedia;window.__setMedia({position:3.2,playing:false});});
+  assert.equal(await layerWin().evaluate(()=>window.__lyrics.index),2,'paused media position selects the third lyric');
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('2d-lyrics.png');await showMain(app);
 
   // 3e. 萌版人物: the cut-out person becomes an always-on-top, click-through mascot window; the external-AI HTTP API
