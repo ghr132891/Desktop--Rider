@@ -58,7 +58,7 @@ Invoke-RestMethod -Method Post -Uri "$($t.url)/api/mascot/command" -Headers @{Au
 
 ## 做一个全身的萌版（外部 AI 流程）
 
-壁纸里的人物多半只有半身，本地算法只能把现有像素切成头、身两块再重拼，补不出没画出来的腿脚；"认出人物并补全全身"需要生成式模型，目前 GitHub 上没有一键的开源方案，但可以用现成组件拼：
+壁纸里的人物多半只有半身。本地的做法是：检测到是半身图时，用人物的肤色（鼻尖附近）与衣服主色（身体区域下半部中间）程序化画一个 Q 版身体接在真头下面（`MascotView.chibiBody`），立刻就有全身小人可以动；但它是卡通简笔的，补不出原画风格的服装细节与腿脚；"认出人物并补全全身"需要生成式模型，目前 GitHub 上没有一键的开源方案，但可以用现成组件拼：
 
 1. 从 `GET /api/mascot/rig`（或网页 `Rider.api.mascot.rig()`）拿到抠出的人物 PNG。
 2. 用 Stable Diffusion / ComfyUI 生成全身 Q 版：SDXL 动漫底模 + **IP-Adapter / IP-Adapter-FaceID**（保持人物长相与配色，见 [h94/IP-Adapter-FaceID](https://huggingface.co/h94/IP-Adapter-FaceID)）+ **ControlNet OpenPose**（给一个站立的全身骨架）+ chibi / 缩放类 LoRA（如 [envy-zoom-slider-xl](https://huggingface.co/e-n-v-y/envy-zoom-slider-xl-01) 推到全身构图）；参考 [makeanime](https://github.com/arig23498/makeanime) 这类把人脸 + 风格参考喂给 IP-Adapter 的脚本。直接 img2img 外扩往往要么拉长原图要么丢失长相，IP-Adapter 走 txt2img 更稳。
