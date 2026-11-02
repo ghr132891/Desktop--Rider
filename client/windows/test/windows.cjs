@@ -181,9 +181,14 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.evaluate(()=>{state.modules.mascot.enabled=false;update({custom:false});});
 
   // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
-  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
-   rec.onstop=()=>Rider.modules.find(m=>m.id==='live').useFile(new File([new Blob(chunks)],'ci.webm',{type:'video/webm'})).then(resolve,reject);
-   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},70%,45%)`;ctx.fillRect(0,0,320,200);ctx.fillStyle='#fff';ctx.fillRect((t*5)%300,80,30,30);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
+  // The video is the portrait's cut-out person walking over the inpainted background (the same construction as
+  //     tools/verify-live.cjs), so the still keeps the person where the float points are and the per-frame segmenter has a
+  //     real person to find.
+  await page.evaluate(()=>(async()=>{const img=await loadImage(source()),cut=await Cutout.separate(img,source(),state.floatPoints),bg=await loadImage(cut.backgroundUrl);const W=img.naturalWidth,H=img.naturalHeight,box={x:cut.box.x*W,y:cut.box.y*H,w:cut.box.w*W,h:cut.box.h*H};
+   const blob=await new Promise(resolve=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm',videoBitsPerSecond:6e6});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
+    let t=0;const timer=setInterval(()=>{const k=t/60*6.283;ctx.drawImage(bg,0,0,W,H);ctx.drawImage(cut.cutout,box.x+Math.sin(k)*W*.06,box.y-Math.abs(Math.sin(k*3))*H*.01,box.w,box.h);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();});
+   await Rider.modules.find(m=>m.id==='live').useFile(new File([blob],'ci.webm',{type:'video/webm'}),{time:0});})());
+  await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:180000});
   await page.waitForFunction(()=>state.modules.live.enabled&&document.querySelectorAll('.live-piece:not([hidden])').length>0,null,{timeout:30000});log('live video imported',{live:await page.evaluate(()=>state.modules.live)});
   await page.locator('.client-monitor').nth(primary.index).click();
   await page.waitForFunction(()=>/^(已应用到显示器 \d+（动态壁纸）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
