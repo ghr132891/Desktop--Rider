@@ -31,30 +31,8 @@
    const g=mx.createLinearGradient(0,fade.from,0,fade.to);g.addColorStop(0,fade.out?'rgba(0,0,0,1)':'rgba(0,0,0,0)');g.addColorStop(1,fade.out?'rgba(0,0,0,0)':'rgba(0,0,0,1)');mx.fillStyle=g;mx.fillRect(0,fade.from,w,fade.to-fade.from);
    ctx.globalCompositeOperation='destination-in';ctx.drawImage(m,0,0);ctx.globalCompositeOperation='source-over';}
   return c;}
- // ---- generated Q-version body: when the picture is a bust, draw a small cartoon body in the character's own colours ----
- function avgColor(ctx,x0,y0,x1,y1){const w=Math.max(1,x1-x0),h=Math.max(1,y1-y0),d=ctx.getImageData(x0,y0,w,h).data;let r=0,g=0,b=0,n=0;for(let i=0;i<d.length;i+=4){if(d[i+3]<128)continue;r+=d[i];g+=d[i+1];b+=d[i+2];n++;}return n?[r/n,g/n,b/n]:null;}
- // Most common colour (quantised) among opaque pixels in a box, skipping colours close to `skip`.
- function dominantColor(ctx,x0,y0,x1,y1,skip){const w=Math.max(1,x1-x0),h=Math.max(1,y1-y0),d=ctx.getImageData(x0,y0,w,h).data,hist=new Map();
-  for(let i=0;i<d.length;i+=4){if(d[i+3]<160)continue;const r=d[i],g=d[i+1],b=d[i+2];if(skip&&Math.abs(r-skip[0])+Math.abs(g-skip[1])+Math.abs(b-skip[2])<90)continue;const key=((r>>4)<<8)|((g>>4)<<4)|(b>>4);const e=hist.get(key)||{n:0,r:0,g:0,b:0};e.n++;e.r+=r;e.g+=g;e.b+=b;hist.set(key,e);}
-  let best=null;for(const e of hist.values())if(!best||e.n>best.n)best=e;return best?[best.r/best.n,best.g/best.n,best.b/best.n]:null;}
- const rgb=c=>`rgb(${c.map(v=>Math.round(clamp(v,0,255))).join(',')})`,shade=(c,k)=>c.map(v=>v*k);
- // A chibi body `w`×`h`: dress-like torso, little arms, short legs, shoes — flat colours with soft shading and a thin outline.
- function chibiBody({cloth,skin,width:w,height:h}){const c=document.createElement('canvas');c.width=Math.max(8,Math.round(w));c.height=Math.max(8,Math.round(h));const x=c.getContext('2d');const W=c.width,H=c.height,cx=W/2,dark=shade(cloth,.72),light=shade(cloth,1.12),skinDark=shade(skin,.8);
-  x.lineJoin='round';x.lineWidth=Math.max(1,W*.012);x.strokeStyle='rgba(40,30,40,.35)';
-  // legs
-  const legW=W*.17,legTop=H*.62,legH=H*.3;for(const sx of [cx-W*.19,cx+W*.02]){x.fillStyle=rgb(skin);x.beginPath();x.roundRect(sx,legTop,legW,legH,legW*.4);x.fill();x.stroke();}
-  // shoes
-  for(const sx of [cx-W*.19,cx+W*.02]){x.fillStyle=rgb(shade(dark,.75));x.beginPath();x.ellipse(sx+legW/2,legTop+legH-H*.02,legW*.72,H*.045,0,0,Math.PI*2);x.fill();x.stroke();}
-  // torso (dress): narrow at the neck, flaring to the hem
-  const g=x.createLinearGradient(0,H*.05,0,H*.68);g.addColorStop(0,rgb(light));g.addColorStop(1,rgb(cloth));x.fillStyle=g;x.beginPath();x.moveTo(cx-W*.2,H*.04);x.lineTo(cx+W*.2,H*.04);x.quadraticCurveTo(cx+W*.3,H*.3,cx+W*.42,H*.66);x.quadraticCurveTo(cx,H*.74,cx-W*.42,H*.66);x.quadraticCurveTo(cx-W*.3,H*.3,cx-W*.2,H*.04);x.closePath();x.fill();x.stroke();
-  // collar + hem shadow
-  x.fillStyle=rgb(dark);x.beginPath();x.ellipse(cx,H*.05,W*.2,H*.035,0,0,Math.PI);x.fill();x.globalAlpha=.25;x.beginPath();x.moveTo(cx-W*.4,H*.6);x.quadraticCurveTo(cx,H*.72,cx+W*.4,H*.6);x.quadraticCurveTo(cx,H*.76,cx-W*.4,H*.6);x.fill();x.globalAlpha=1;
-  // arms
-  for(const [ax,rot] of [[cx-W*.34,.35],[cx+W*.34,-.35]]){x.save();x.translate(ax,H*.3);x.rotate(rot);x.fillStyle=rgb(skin);x.beginPath();x.roundRect(-W*.07,-H*.14,W*.14,H*.3,W*.07);x.fill();x.stroke();x.fillStyle=rgb(skinDark);x.beginPath();x.ellipse(0,H*.15,W*.075,H*.045,0,0,Math.PI*2);x.fill();x.restore();}
-  return c;}
  // cutout: canvas/image with alpha. opts: {face:{box:{x,y,w,h},keypoints:[{x,y}…]} normalised to the cutout, headScale, bodyScale, bodySquash}
- // body: 'cutout' keeps the picture's own body, 'chibi' draws one, 'auto' draws one when the picture is a bust (body shorter than the head)
- function buildRig(cutout,{face=null,headScale=1.7,bodyScale=.78,bodySquash=.72,neckAdjust=0,body:bodyMode='auto'}={}){
+ function buildRig(cutout,{face=null,headScale=1.7,bodyScale=.78,bodySquash=.72,neckAdjust=0}={}){
   const w=cutout.width||cutout.naturalWidth,h=cutout.height||cutout.naturalHeight,c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(cutout,0,0);
   const prof=alphaRows(ctx,w,h);if(prof.top<0)return null;
   const hb=headBottom(prof,h,face,neckAdjust),overlap=Math.max(2,Math.round((prof.bottom-prof.top)*.03));
@@ -62,23 +40,17 @@
   let bl=w,br=-1;for(let y=hb;y<=prof.bottom;y++){const r=prof.rows[y];if(r.n){if(r.l<bl)bl=r.l;if(r.r>br)br=r.r;}}
   if(hr<0||br<0)return null;
   const neckRow=prof.rows[hb],neckX=neckRow.n?(neckRow.l+neckRow.r)/2:(hl+hr)/2;
-  const headC=part(c,hl,prof.top,hr+1,hb+overlap,{from:hb-prof.top,to:hb-prof.top+overlap,out:true});
-  const bs=bodyScale,sq=bodySquash;
-  const bust=(prof.bottom-hb)<(hb-prof.top)*.9,generated=bodyMode==='chibi'||(bodyMode==='auto'&&bust);let bodyC,neckXBody=neckX-bl,bsEff=bs,sqEff=sq;
-  if(generated){const headW=hr-hl+1,headH=hb-prof.top;const skinAt=face&&face.keypoints&&face.keypoints[2]?avgColor(ctx,Math.round(face.keypoints[2].x*w-headW*.04),Math.round(face.keypoints[2].y*h-headW*.02),Math.round(face.keypoints[2].x*w+headW*.04),Math.round(face.keypoints[2].y*h+headW*.04)):null;
-   const skin=skinAt||[246,214,190],bcx=(bl+br)/2,bw=br-bl+1,cloth=dominantColor(ctx,Math.round(bcx-bw*.22),Math.round(hb+(prof.bottom-hb)*.45),Math.round(bcx+bw*.22),prof.bottom+1,skin)||dominantColor(ctx,bl,hb,br+1,prof.bottom+1,skin)||[90,120,200]; // lower centre: clothes, not the hair falling past the shoulders
-   bodyC=chibiBody({cloth,skin,width:headW*.78,height:headH*1.05});neckXBody=bodyC.width/2;bsEff=1;sqEff=1;}
-  else bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1,{from:0,to:overlap,out:false});
+  const headC=part(c,hl,prof.top,hr+1,hb+overlap,{from:hb-prof.top,to:hb-prof.top+overlap,out:true}),bodyC=part(c,bl,hb-overlap,br+1,prof.bottom+1,{from:0,to:overlap,out:false});
   // Composite: body neck at the origin, head hanging from the same point, then shift to positive coordinates.
-  const hs=headScale;
-  const head={w:headC.width*hs,h:headC.height*hs,x:-(neckX-hl)*hs,y:-(headC.height-overlap)*hs},body={w:bodyC.width*bsEff,h:bodyC.height*bsEff*sqEff,x:-neckXBody*bsEff,y:generated?-headC.height*hs*.06:-overlap*bs*sq};
+  const hs=headScale,bs=bodyScale,sq=bodySquash;
+  const head={w:headC.width*hs,h:headC.height*hs,x:-(neckX-hl)*hs,y:-(headC.height-overlap)*hs},body={w:bodyC.width*bs,h:bodyC.height*bs*sq,x:-(neckX-bl)*bs,y:-overlap*bs*sq};
   const minX=Math.min(head.x,body.x),minY=Math.min(head.y,body.y);for(const p of [head,body]){p.x-=minX;p.y-=minY;}
   const width=Math.max(head.x+head.w,body.x+body.w),height=Math.max(head.y+head.h,body.y+body.h);
   // Face landmarks relative to the head part (fractions), for stickers; defaults when no face was found.
   let f={eyes:[{x:.36,y:.52},{x:.64,y:.52}],mouth:{x:.5,y:.74},blush:[{x:.27,y:.64},{x:.73,y:.64}],size:.18,detected:false};
   if(face&&face.keypoints&&face.keypoints.length>=4){const k=face.keypoints.map(p=>({x:(p.x*w-hl)/headC.width,y:(p.y*h-prof.top)/headC.height})),eyeW=Math.hypot(k[1].x-k[0].x,k[1].y-k[0].y);
    f={eyes:[k[0],k[1]],mouth:k[3],blush:[{x:k[0].x-eyeW*.15,y:k[0].y+eyeW*.55},{x:k[1].x+eyeW*.15,y:k[1].y+eyeW*.55}],size:clamp(eyeW*.9,.08,.35),detected:true};}
-  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:(headC.height-overlap)*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq,neckAdjust,body:bodyMode},cut:(hb-prof.top)/(prof.bottom-prof.top),generatedBody:generated,bust};}
+  return {head:{url:headC.toDataURL('image/png'),...head,pivot:{x:(neckX-hl)*hs,y:(headC.height-overlap)*hs}},body:{url:bodyC.toDataURL('image/png'),...body},width,height,face:f,params:{headScale:hs,bodyScale:bs,bodySquash:sq,neckAdjust},cut:(hb-prof.top)/(prof.bottom-prof.top)};}
  // ---- phrases (overridable through command {type:'phrases'}) ----
  const PHRASES={tap:['嘿！','在呢~','嗯？','戳我干嘛呀'],pat:['好舒服…','再摸摸~','嘿嘿'],angry:['别戳啦！','生气了哦！','哼！'],cheer:['耶——！','太棒了！'],surprise:['哇！','诶？'],shy:['别看我啦…','讨厌~'],sleep:['Zz…','呼…呼…'],wake:['醒啦！','嗯…早'],drag:['哇哇哇——','放我下来~'],drop:['呼——','头好晕'],dance:['这首我会！','一起摇~'],idle:['今天也要加油哦','在想什么呢？','要不要听首歌？','……']};
  const FX={heart:'❤',note:'♪',note2:'♫',spark:'✦',anger:'💢',zz:'z',sweat:'💧',ex:'!',q:'?'};
@@ -193,6 +165,6 @@
   view.raf=requestAnimationFrame(tick);
   view.destroy=()=>{cancelAnimationFrame(view.raf);clearTimeout(sayTimer);clearTimeout(pressTimer);root.replaceChildren();};
   return view;}
- const MascotView={buildRig,create,chibiBody,PHRASES,FX};
+ const MascotView={buildRig,create,PHRASES,FX};
  if(typeof module!=='undefined'&&module.exports)module.exports=MascotView;if(typeof window!=='undefined')window.MascotView=MascotView;
 })();
