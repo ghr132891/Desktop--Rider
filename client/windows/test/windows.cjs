@@ -17,15 +17,17 @@ const ps=(file,list)=>new Promise((resolve,reject)=>execFile('powershell.exe',['
 const screenshot=name=>ps(path.join(__dirname,'screenshot.ps1'),['-Path',path.join(OUT,name)]).then(out=>log('screenshot',{name,...JSON.parse(out)})).catch(error=>log('screenshot failed',{name,error:error.message}));
 const pngSize=file=>{const b=fs.readFileSync(file);assert.equal(b.toString('latin1',1,4),'PNG',file+' is a PNG');return {width:b.readUInt32BE(16),height:b.readUInt32BE(20)};};
 const realLower=p=>fs.realpathSync.native(p).toLowerCase();
-const mainWindows=app=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(w=>/^http:/.test(w.webContents.getURL())));
-const hideMain=app=>app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindow.getAllWindows())if(/^http:/.test(w.webContents.getURL()))w.hide();});
-const showMain=app=>app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindow.getAllWindows())if(/^http:/.test(w.webContents.getURL()))w.show();});
+// The main window is the loopback page that is not the layer (/client/layer.html is served from the same origin now).
+const isMainUrl="(u=>/^http:/.test(u)&&!u.includes('/client/'))";
+const mainWindows=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);return BrowserWindow.getAllWindows().filter(w=>isMain(w.webContents.getURL()));},isMainUrl);
+const hideMain=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);for(const w of BrowserWindow.getAllWindows())if(isMain(w.webContents.getURL()))w.hide();},isMainUrl);
+const showMain=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);for(const w of BrowserWindow.getAllWindows())if(isMain(w.webContents.getURL()))w.show();},isMainUrl);
 async function launch(userData){
  const app=await electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'..'),'--user-data-dir='+userData],env:{...process.env,ELECTRON_ENABLE_LOGGING:'0'}});
  const page=await app.firstWindow();await page.waitForLoadState('domcontentloaded');
  // The default 1440×960 main window would hide the whole 1024×768 runner desktop — and the power policy would then
  // rightly pause the layer videos. Keep it a normal window that leaves desktop visible.
- await app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindow.getAllWindows())if(/^http:/.test(w.webContents.getURL())){w.unmaximize();w.setBounds({x:60,y:40,width:900,height:640});}});
+ await app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);for(const w of BrowserWindow.getAllWindows())if(isMain(w.webContents.getURL())){w.unmaximize();w.setBounds({x:60,y:40,width:900,height:640});}},isMainUrl);
  await page.locator('#piece-left').evaluate(el=>new Promise(r=>{const c=()=>el.style.backgroundImage?r():requestAnimationFrame(c);c();}));
  return {app,page};
 }
@@ -130,7 +132,7 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('2c-clip.png');await showMain(app);
   // Power saving: maximising the main window hides the desktop → the bridge watcher reports it → the clip pauses and the
   // canvas stops redrawing; restoring the window resumes playback. (Lock screen / battery use the same path via powerMonitor.)
-  const mainWin=fn=>app.evaluate(({BrowserWindow},fn)=>{const w=BrowserWindow.getAllWindows().find(w=>/^http:/.test(w.webContents.getURL()));return eval(fn)(w);},fn.toString());
+  const mainWin=fn=>app.evaluate(({BrowserWindow},[fn,f])=>{const isMain=eval(f);const w=BrowserWindow.getAllWindows().find(w=>isMain(w.webContents.getURL()));return eval(fn)(w);},[fn.toString(),isMainUrl]);
   await mainWin(w=>{w.show();w.maximize();});
   const pausedLayer=await until(page,async()=>{const l=await desktopRider.layers();return l[0]&&l[0].paused?l[0]:null;},'the layer pausing behind a maximised window',20000);log('paused behind maximised window',{layer:pausedLayer});
   assert.equal(pausedLayer.pauseReason,'covered');assert.ok(pausedLayer.covering&&pausedLayer.covering.zoomed,'the covering window is the maximised one: '+JSON.stringify(pausedLayer.covering));
