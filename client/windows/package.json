@@ -47,6 +47,7 @@
         "lyrics-view.css",
         "mascot-view.js",
         "mascot-view.css",
+        "live-person.js",
           "core.js",
           "app.js",
           "cutout.js",

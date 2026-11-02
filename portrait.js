@@ -1,9 +1,10 @@
 'use strict';
 // Shared preview/export renderer. No remote requests and no uploaded image data.
+const portraitScriptBase=(document.currentScript&&document.currentScript.src)||location.href; // the layer page lives under /client/, the worker next to this file
 const Portrait = (()=>{
  let worker,nextId=0;const pending=new Map(),cache=new Map(),prepared=new Map();
  function stop(error){worker?.terminate();worker=null;for(const job of pending.values()){clearTimeout(job.timer);job.reject(error);}pending.clear();cache.clear();}
- function getWorker(){if(worker)return worker;worker=new Worker('person-worker.js');worker.onmessage=({data})=>{const job=pending.get(data.id);if(!job)return;pending.delete(data.id);clearTimeout(job.timer);data.error?job.reject(new Error(data.error)):job.resolve(data);};worker.onerror=()=>stop(new Error('人物识别暂不可用，请重试'));return worker;}
+ function getWorker(){if(worker)return worker;worker=new Worker(new URL('person-worker.js',portraitScriptBase));worker.onmessage=({data})=>{const job=pending.get(data.id);if(!job)return;pending.delete(data.id);clearTimeout(job.timer);data.error?job.reject(new Error(data.error)):job.resolve(data);};worker.onerror=()=>stop(new Error('人物识别暂不可用，请重试'));return worker;}
  async function ask(img,point){const bitmap=await createImageBitmap(img);return new Promise((resolve,reject)=>{const id=++nextId;const timer=setTimeout(()=>stop(new Error('人物识别超时，请重试')),30000);pending.set(id,{resolve,reject,timer});getWorker().postMessage({id,bitmap,point},[bitmap]);});}
  // Confidence mask of the object under a normalized point (0–1), at model output size.
  function segmentAt(img,x,y){return ask(img,{x,y});}

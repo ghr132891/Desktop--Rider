@@ -190,6 +190,10 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.equal(liveLayers.length,1);assert.equal(liveLayers[0].live,true);assert.equal(liveLayers[0].monitorId,primary.id);
   const liveInfo=await bridge.layerInfo(liveLayers[0].hwnd);log('live layer window',liveInfo);assert.equal(liveInfo.visible,true);assert.deepEqual(rectOf(liveInfo),rectOf(primary));
   const playing=await untilPlaying(app);log('live layer playing',playing);assert.ok(playing.frames>5&&!playing.paused,'the layer window decodes and paints frames');
+  // Per-frame person extraction on the desktop: the floating person is on, so the plan carries `person`; the layer loads
+  // portrait.js + live-person.js over the loopback server and produces masks.
+  assert.ok(liveLayers[0].person,'the layer entry carries the person plan');let personState=null;for(const t0=Date.now();Date.now()-t0<90000;){personState=await layerWin().evaluate(()=>window.__person).catch(()=>null);if(personState&&(personState.masks>3||personState.error))break;await page.waitForTimeout(500);}
+  log('live person extraction',personState);assert.ok(personState&&personState.active,'extraction active');assert.equal(personState.error,'',personState&&personState.error);assert.ok(personState.masks>3,'masks keep coming: '+JSON.stringify(personState));assert.equal(personState.copies,1);
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('3-live.png');await showMain(app);
 
   // 5. Restart: layers.json brings the live layer back on its own, under the host again and playing.

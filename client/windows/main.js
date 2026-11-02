@@ -28,7 +28,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}
 else{
  app.on('second-instance',()=>showMain());
  app.whenReady().then(async()=>{
-  web=await server.start(WEB_ROOT,{api:mascotApi});
+  web=await server.start(WEB_ROOT,{api:mascotApi,routes:{'/client/':__dirname,'/data/':DATA}}); // layer.html + its media are served same-origin with the web app
   await writeJson(MASCOT_API,{url:web.url.replace(/\/$/,''),token:mascotToken}).catch(()=>{});
   createMain();createTray();applyLoginItem();watchPower();
   await restoreLayers();await restoreMascots();
@@ -165,7 +165,9 @@ async function apply({monitorId,background,overlay,live,clips,lyrics,mascot}={})
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-')&&old.endsWith('.png')&&!old.includes('overlay')&&old!==path.basename(file))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  const content={overlay:null,live:null,clips:[],lyrics:lyricsCfg};
  if(overlay){content.overlay=path.join(DATA,`${key}-overlay.png`);await fsp.writeFile(content.overlay,dataUrlToPng(overlay));}
- if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan,still:file};}
+ if(checked){status('正在写入视频…');const video=path.join(DATA,`${key}-live-${stamp}.${checked.ext}`);await fsp.writeFile(video,checked.bytes);content.live={video,plan:checked.plan,still:file,person:checked.person||null,plate:null};
+  if(checked.person&&checked.plate){content.live.plate=path.join(DATA,`${key}-plate-${stamp}.${checked.plate.ext}`);await fsp.writeFile(content.live.plate,checked.plate.bytes);}}
+ for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-plate-')&&(!content.live?.plate||old!==path.basename(content.live.plate)))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-live-')&&(!content.live||old!==path.basename(content.live.video)))fsp.unlink(path.join(DATA,old)).catch(()=>{});
  if(clipList.length){status('正在写入图层视频…');content.clips=[];for(const [i,c] of clipList.entries()){const video=path.join(DATA,`${key}-clip-${i}-${stamp}.${c.ext}`);await fsp.writeFile(video,c.bytes);content.clips.push({...c.item,video});}}
  const keepClips=new Set(content.clips.map(c=>path.basename(c.video)));for(const old of await fsp.readdir(DATA))if(old.startsWith(key+'-clip-')&&!keepClips.has(old))fsp.unlink(path.join(DATA,old)).catch(()=>{});
@@ -190,11 +192,13 @@ async function showLayer(monitorId,monitor,content,stamp){
   win.on('closed',()=>{entry.watcher?.stop();entry.watcher=null;if(layers.get(monitorId)===entry)layers.delete(monitorId);});
  }
  entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.lyrics=content.lyrics||null;entry.lyricsState=null;entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
- let url=fileUrl(path.join(__dirname,'layer.html'))+'?v='+stamp;
- if(entry.overlay)url+='&img='+encodeURIComponent(fileUrl(entry.overlay));
- if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:fileUrl(entry.live.video),still:entry.live.still?fileUrl(entry.live.still):null,plan:entry.live.plan}));
- if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?fileUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:fileUrl(c.video)}))}));
- if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?LyricsView.parse(entry.lyrics.source.lrc):[]}))+'&lib='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'lyrics-view.js')))+'&css='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'lyrics-view.css')));
+ // Everything the page loads comes from the loopback server: the page under /client/, written files under /data/, renderers at the web root.
+ const dataUrl=p=>web.url+'data/'+encodeURIComponent(path.basename(p));
+ let url=web.url+'client/layer.html?v='+stamp+'&web='+encodeURIComponent(web.url);
+ if(entry.overlay)url+='&img='+encodeURIComponent(dataUrl(entry.overlay));
+ if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:dataUrl(entry.live.video),still:entry.live.still?dataUrl(entry.live.still):null,plan:entry.live.plan,person:entry.live.person?{...entry.live.person,plate:entry.live.plate?dataUrl(entry.live.plate):null}:null}));
+ if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?dataUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:dataUrl(c.video)}))}));
+ if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?LyricsView.parse(entry.lyrics.source.lrc):[]}))+'&lib='+encodeURIComponent(web.url+'lyrics-view.js')+'&css='+encodeURIComponent(web.url+'lyrics-view.css');
  await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
@@ -224,7 +228,7 @@ ipcMain.handle('client:monitors',()=>monitors());
 ipcMain.handle('client:apply',(e,request)=>apply(request));
 ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
-ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?LyricsView.parse(e.lyrics.source.lrc).length:0,source:'',words:false,error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
+ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,person:!!e.live?.person,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?LyricsView.parse(e.lyrics.source.lrc).length:0,source:'',words:false,error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:mascots',()=>[...mascots].map(([monitorId,m])=>({monitorId,hwnd:process.platform==='win32'&&!m.window.isDestroyed()?hwndOf(m.window.getNativeWindowHandle()):null,bounds:m.window.isDestroyed()?null:m.window.getBounds(),onTop:!!m.cfg.style.onTop,hover:!!m.hover})));
 ipcMain.handle('client:mascot-api',()=>({url:web?web.url.replace(/\/$/,''):null,token:mascotToken}));
 ipcMain.handle('client:get-settings',()=>settings);

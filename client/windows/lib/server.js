@@ -12,12 +12,14 @@ function resolveFile(root,urlPath){
  return file;
 }
 // `api(req,res)` may claim requests under /api/ (returns true when handled) — the mascot's external-AI endpoints (main.js).
-function start(root,{host='127.0.0.1',port=0,api=null}={}){
- root=path.resolve(root);
+// `routes` maps URL prefixes to other directories ({'/client/':…,'/data/':…}) so the layer window and its media are same-origin.
+function start(root,{host='127.0.0.1',port=0,api=null,routes={}}={}){
+ root=path.resolve(root);const extra=Object.entries(routes).map(([prefix,dir])=>[prefix,path.resolve(dir)]);
  const server=http.createServer((req,res)=>{
   if(api&&(req.url||'').startsWith('/api/')){try{if(api(req,res))return;}catch(error){res.writeHead(500,{'Content-Type':'application/json'}).end(JSON.stringify({ok:false,error:String(error.message||error)}));return;}}
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405).end();return;}
-  const file=resolveFile(root,req.url||'/');
+  const url=req.url||'/',route=extra.find(([prefix])=>url.startsWith(prefix));
+  const file=route?resolveFile(route[1],'/'+url.slice(route[0].length)):resolveFile(root,url);
   if(!file){res.writeHead(403).end();return;}
   fs.stat(file,(error,stat)=>{
    if(error||!stat.isFile()){res.writeHead(404).end();return;}

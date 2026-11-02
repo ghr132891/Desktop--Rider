@@ -11,7 +11,14 @@ function checkLive(live){
  if(!/^#[0-9a-f]{6}$/i.test(plan.gapColor||''))throw new Error('动态壁纸间隙颜色无效');
  if(!Array.isArray(plan.pieces)||plan.pieces.length<1||plan.pieces.length>2)throw new Error('动态壁纸分块无效');
  const pieces=plan.pieces.map(p=>{if(!p||!Array.isArray(p.polygon)||p.polygon.length<3||p.polygon.length>128||!p.polygon.every(q=>Array.isArray(q)&&q.length===2&&q.every(num))||![p.x,p.y,p.w,p.h].every(num)||p.w<=0||p.h<=0)throw new Error('动态壁纸分块无效');return {polygon:p.polygon.map(([x,y])=>[x,y]),x:p.x,y:p.y,w:p.w,h:p.h};});
- return {bytes,ext,plan:{width:plan.width,height:plan.height,gapColor:plan.gapColor,pieces}};
+ // Per-frame person extraction (modules/live.js → layer.html): cut box, copy frames in px, plate image bytes.
+ let person=null,plate=null;const pr=live.person;
+ if(pr&&typeof pr==='object'){const b=pr.box;if(!b||![b.x,b.y,b.w,b.h].every(v=>num(v)&&v>=0&&v<=1)||b.w<=0||b.h<=0)throw new Error('人物框无效');
+  if(!Array.isArray(pr.copies)||pr.copies.length>14)throw new Error('人物副本无效');
+  const copies=pr.copies.map(c=>{if(!c||![c.left,c.top,c.w,c.h].every(v=>num(v)&&Math.abs(v)<1e6)||c.w<=0||c.h<=0||!num(c.rotate)||!num(c.opacity))throw new Error('人物副本无效');return {left:c.left,top:c.top,w:c.w,h:c.h,rotate:c.rotate,flip:c.flip===true,opacity:Math.max(0,Math.min(100,c.opacity)),filter:typeof c.filter==='string'?c.filter.slice(0,400):'none'};});
+  if(pr.plate&&pr.plate.bytes){const pb=pr.plate.bytes,pbuf=Buffer.isBuffer(pb)?pb:ArrayBuffer.isView(pb)?Buffer.from(pb.buffer,pb.byteOffset,pb.byteLength):pb instanceof ArrayBuffer?Buffer.from(pb):null;if(pbuf&&pbuf.length&&pbuf.length<=24*1024*1024)plate={bytes:pbuf,ext:pr.plate.type==='image/png'?'png':'jpg'};}
+  person={box:{x:b.x,y:b.y,w:b.w,h:b.h},keepOriginal:pr.keepOriginal===true,shadow:pr.shadow!==false,copies};}
+ return {bytes,ext,plan:{width:plan.width,height:plan.height,gapColor:plan.gapColor,pieces},person,plate};
 }
 // Video layers from modules/layers.js: up to 6 files, each with the frame and look layer.html paints it with.
 // Returns [{bytes,ext,item}] where item holds only the checked numeric / enum fields (no bytes, no file path yet).

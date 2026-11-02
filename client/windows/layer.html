@@ -4,27 +4,26 @@
 #lyrics{position:fixed;z-index:3;pointer-events:none}</style></head>
 <body><canvas id="live" hidden></canvas><img id="overlay" alt="" hidden><div id="lyrics" hidden></div>
 <script>
-// Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1).
-//   ?img=<file url>   transparent overlay PNG: floating person copies and modules drawn above the person
-//   ?live=<json>      {video:<file url>, still:<file url>, plan:{width,height,gapColor,pieces:[{polygon,x,y,w,h}]}} — the
-//                     shared wallpaper video plays clipped to each wallpaper piece, exactly like the still pieces were cut
-//   ?clips=<json>     {width,height,still,items:[{video,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}]}
-//                     video layers (modules/layers.js), each painted per frame with its own transform, look and blend mode
-//   ?lyrics=<json>    {style:{…lyrics-view.js style in px…},lines:[…]} — 桌面歌词 (modules/lyrics.js), drawn by the shared
-//                     renderer lyrics-view.js (+ lyrics-view.css) that ?lib= and ?css= point at (file URLs into the web root).
-//                     main.js then calls __setLyrics({lines,source,words}) when the words arrive and __setMedia({position,playing})
-//                     with the player's position (system media session). Without a player the lines loop on an own clock.
-//   &v=<stamp>        defeats the image cache
-// Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas —
-// still wallpaper, live pieces, clips below the person, the overlay, clips above it — so blend modes have a backdrop.
-// Redraws happen only when a video presents a new frame (requestVideoFrameCallback) or an image finishes loading.
-// main.js calls window.__setPaused(paused, reason) from lib/power.js: desktop hidden by a window, lock screen,
-// battery, suspend. Paused videos present no frames and the lyrics clock stops, so nothing is drawn until resumed.
+// Transparent, click-through window parented under the wallpaper host (see native/bridge.ps1). Served by the client's
+// loopback server (…/client/layer.html) so Workers, WASM and models load from the same origin as the web app.
+//   ?img=<url>        transparent overlay PNG: person copies (unless the person moves, below) and modules above the person
+//   ?live=<json>      {video, still, plan:{width,height,gapColor,pieces:[{polygon,x,y,w,h}]}, person?} — the shared wallpaper
+//                     video plays clipped to each wallpaper piece; with `person` ({box,keepOriginal,shadow,copies,plate}) the
+//                     person is extracted from every frame (live-person.js + portrait.js): the original spot is covered with a
+//                     learned background and each copy is painted with the moving person instead of the still copy.
+//   ?clips=<json>     {width,height,still,items:[…]} video layers (modules/layers.js), each painted per frame with its look
+//   ?lyrics=<json>    桌面歌词 (modules/lyrics.js) through lyrics-view.js (?lib= / ?css=); main.js pushes words / position
+//   ?web=<origin/>    the web root URL (portrait.js, live-person.js)     &v=<stamp>  defeats caches
+// Overlay only: the PNG shows by itself. With any video the page composes everything on one opaque canvas per frame:
+// still → live pieces → cover patch → clips below → moving copies → overlay → clips above.
+// main.js calls window.__setPaused(paused, reason) from lib/power.js; paused videos present no frames and the person
+// pipeline and lyrics clock stop too.
 const q=new URLSearchParams(location.search),img=document.getElementById('overlay'),canvas=document.getElementById('live');
-window.__frames=0;window.__paused=false;window.__pauseReason='';window.__clips=[];window.__video=null;
-const live=q.get('live')?JSON.parse(q.get('live')):null,clips=q.get('clips')?JSON.parse(q.get('clips')):null,overlaySrc=q.get('img')?q.get('img')+'#'+(q.get('v')||''):null;
+window.__frames=0;window.__paused=false;window.__pauseReason='';window.__clips=[];window.__video=null;window.__person={active:false,masks:0,maskMs:0,error:'',copies:0};
+const live=q.get('live')?JSON.parse(q.get('live')):null,clips=q.get('clips')?JSON.parse(q.get('clips')):null,overlaySrc=q.get('img')?q.get('img')+'#'+(q.get('v')||''):null,web=q.get('web')||'';
 const items=(clips&&Array.isArray(clips.items)?clips.items:[]);
 const pauseHooks=[];window.__setPaused=(paused,reason)=>{window.__paused=!!paused;window.__pauseReason=paused?String(reason||''):'';for(const fn of pauseHooks)fn(!!paused);};
+const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('load '+src));document.head.append(s);});
 if(!live&&!items.length){if(overlaySrc){img.hidden=false;img.src=overlaySrc;}}
 else{
  const W=live?live.plan.width:clips.width,H=live?live.plan.height:clips.height;
@@ -42,7 +41,14 @@ else{
  const liveVideo=live?mkVideo(live.video):null;if(liveVideo)liveVideo.addEventListener('error',()=>{document.title='Desktop Rider 桌面层 · 视频无法播放';});
  for(const c of items)c.video=mkVideo(c.video);
  window.__video=liveVideo||items[0]?.video||null;window.__clips=items.map(c=>c.video);
- pauseHooks.push(paused=>{for(const v of videos){if(paused)v.pause();else v.play().catch(()=>{});}if(!paused)schedule();});
+ // ---- per-frame person extraction (shared pipeline) ----
+ let lp=null;const person=live?.person||null;
+ if(person&&web){window.__person.active=true;window.__person.copies=person.copies.length;
+  (async()=>{try{await loadScript(web+'portrait.js');await loadScript(web+'live-person.js');const plate=person.plate?await new Promise(res=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>res(null);im.src=person.plate;}):null;
+    lp=window.LivePerson.create({video:liveVideo,box:person.box,keepOriginal:!!person.keepOriginal,segment:(bitmap,ts)=>Portrait.segmentVideo(bitmap,ts),plate}); // Portrait is a script-scope const, not a window property
+    window.__lp=lp;lp.paused=window.__paused;const tick=()=>{window.__person.masks=lp.masks;window.__person.maskMs=Math.round(lp.maskMs);window.__person.error=lp.error;window.__person.active=lp.active;if(lp.active||!lp.error)setTimeout(tick,500);};lp.pump();tick();}
+   catch(error){window.__person.error=error.message||String(error);window.__person.active=false;}})();}
+ pauseHooks.push(paused=>{for(const v of videos){if(paused)v.pause();else v.play().catch(()=>{});}if(lp)lp.paused=paused;if(!paused)schedule();});
  const blends={normal:'source-over',multiply:'multiply',screen:'screen',overlay:'overlay','soft-light':'soft-light',lighten:'lighten',darken:'darken',difference:'difference'};
  const ready=im=>im&&im.complete&&im.naturalWidth>0;
  const drawClip=c=>{const v=c.video;if(v.readyState<2||!v.videoWidth)return;ctx.save();
@@ -53,12 +59,14 @@ else{
   let dw=c.w,dh=c.h,sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;
   if(c.fit==='cover'){const k=Math.max(c.w/sw,c.h/sh);sw=c.w/k;sh=c.h/k;sx=(v.videoWidth-sw)/2;sy=(v.videoHeight-sh)/2;}else if(c.fit==='contain'){const k=Math.min(c.w/sw,c.h/sh);dw=sw*k;dh=sh*k;}
   ctx.drawImage(v,sx,sy,sw,sh,-dw/2,-dh/2,dw,dh);ctx.restore();};
+ const clipPiece=p=>{ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();};
  const render=()=>{
   ctx.clearRect(0,0,W,H);
   if(live){ctx.fillStyle=live.plan.gapColor;ctx.fillRect(0,0,W,H);}
   if(ready(still))ctx.drawImage(still,0,0,W,H);
-  if(liveVideo&&liveVideo.readyState>=2)for(const p of live.plan.pieces){ctx.save();ctx.beginPath();p.polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();ctx.drawImage(liveVideo,p.x,p.y,p.w,p.h);ctx.restore();}
+  if(liveVideo&&liveVideo.readyState>=2)for(const p of live.plan.pieces){ctx.save();clipPiece(p);ctx.drawImage(liveVideo,p.x,p.y,p.w,p.h);if(lp)lp.drawCover(ctx,p);ctx.restore();}
   for(const c of items)if(!c.above)drawClip(c);
+  if(lp&&person)for(const copy of person.copies)lp.drawCopy(ctx,copy,{shadow:!!person.shadow,width:W});
   if(ready(overlay))ctx.drawImage(overlay,0,0,W,H);
   for(const c of items)if(c.above)drawClip(c);
   window.__frames++;};
@@ -69,17 +77,14 @@ const lyricsCfg=q.get('lyrics')?JSON.parse(q.get('lyrics')):null,box=document.ge
 window.__lyrics={lines:0,line:'',index:-1,media:null,source:'',words:false,error:'',ticks:0,ready:false};window.__setLyrics=()=>{};window.__setMedia=()=>{};
 if(lyricsCfg&&lyricsCfg.style&&q.get('lib')){
  if(q.get('css')){const link=document.createElement('link');link.rel='stylesheet';link.href=q.get('css');document.head.append(link);}
- const script=document.createElement('script');script.src=q.get('lib');
- script.onload=()=>{const LV=window.LyricsView,st=lyricsCfg.style;let lines=Array.isArray(lyricsCfg.lines)?lyricsCfg.lines:[],media=null,started=Date.now();
+ loadScript(q.get('lib')).then(()=>{const LV=window.LyricsView,st=lyricsCfg.style;let lines=Array.isArray(lyricsCfg.lines)?lyricsCfg.lines:[],media=null,started=Date.now();
   const view=LV.create(box);view.setStyle(st);view.setLines(lines);window.__lyrics.ready=true;window.__lyrics.lines=lines.length;
-  // Player position when a media session reports one (interpolated while playing); otherwise an own clock that loops.
   const now=()=>{const off=Number(st.offset)||0;if(media)return media.position+(media.playing?(Date.now()-media.at)/1000:0)+off;if(!lines.length)return 0;const span=lines[lines.length-1].end+3;return ((Date.now()-started)/1000)%span+off;};
   const tick=()=>{if(window.__paused)return;box.hidden=!lines.length;if(!lines.length)return;const t=now();view.render(t);window.__lyrics.index=view.current;window.__lyrics.line=lines[view.current]?.text||'';window.__lyrics.ticks++;};
   let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop);};
   pauseHooks.push(paused=>{cancelAnimationFrame(raf);if(!paused)raf=requestAnimationFrame(loop);});
   window.__setLyrics=({lines:l,source,words,error}={})=>{lines=Array.isArray(l)?l:[];started=Date.now();view.setLines(lines);Object.assign(window.__lyrics,{lines:lines.length,source:source||'',words:!!words,error:error||''});tick();};
   window.__setMedia=m=>{media=m&&typeof m.position==='number'?{position:m.position,playing:!!m.playing,at:Date.now()}:null;window.__lyrics.media=media?{position:media.position,playing:media.playing}:null;tick();};
-  if(!window.__paused)raf=requestAnimationFrame(loop);};
- document.head.append(script);
+  if(!window.__paused)raf=requestAnimationFrame(loop);}).catch(()=>{window.__lyrics.error='lyrics-view.js 加载失败';});
 }
 </script></body></html>

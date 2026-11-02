@@ -161,3 +161,17 @@ test('mascot payload is validated; the loopback server hands /api/ requests to t
  assert.equal((await get('/api/other')).status,404,'unclaimed /api/ paths fall through to the static server');assert.equal((await get('/api/other','POST')).status,405);assert.equal((await get('/index.html')).status,200);
  assert.deepEqual(seen,['GET /api/mascot/state','POST /api/mascot/command','GET /api/other','POST /api/other']);web.server.closeAllConnections?.();await web.close();
 });
+
+test('live plan: person block and plate are validated; server routes map prefixes to other directories',async()=>{
+ const {checkLive}=require('../lib/live');const plan={width:1920,height:1080,gapColor:'#e9eff4',pieces:[{polygon:[[0,0],[1,0],[1,1]],x:0,y:0,w:1,h:1}]};
+ const person={box:{x:.2,y:.1,w:.3,h:.8},keepOriginal:false,shadow:true,copies:[{left:100,top:50,w:300,h:800,rotate:10,flip:true,opacity:80,filter:'hue-rotate(90deg)'}],plate:{type:'image/jpeg',bytes:new Uint8Array([1,2,3]).buffer}};
+ const ok=checkLive({type:'video/webm',bytes:Buffer.from([1]),plan,person});assert.deepEqual(ok.person.copies[0],{left:100,top:50,w:300,h:800,rotate:10,flip:true,opacity:80,filter:'hue-rotate(90deg)'});assert.equal(ok.plate.ext,'jpg');assert.equal(ok.plate.bytes.length,3);assert.equal(ok.person.shadow,true);
+ assert.equal(checkLive({type:'video/webm',bytes:Buffer.from([1]),plan}).person,null);
+ assert.throws(()=>checkLive({type:'video/webm',bytes:Buffer.from([1]),plan,person:{...person,box:{x:2,y:0,w:1,h:1}}}),/人物框/);assert.throws(()=>checkLive({type:'video/webm',bytes:Buffer.from([1]),plan,person:{...person,copies:[{left:'a'}]}}),/副本/);
+ const server=require('../lib/server'),http=require('node:http'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'dr-root-')),other=fs.mkdtempSync(path.join(os.tmpdir(),'dr-other-'));fs.writeFileSync(path.join(root,'a.js'),'1');fs.writeFileSync(path.join(other,'layer.html'),'<p>x</p>');
+ const web=await server.start(root,{routes:{'/client/':other}});const get=p=>new Promise((resolve,reject)=>{http.get(web.url.replace(/\/$/,'')+p,{agent:false,headers:{Connection:'close'}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,type:res.headers['content-type'],body:b}));}).on('error',reject);});
+ assert.equal((await get('/a.js')).status,200);const r=await get('/client/layer.html');assert.equal(r.status,200);assert.match(r.type,/text\/html/);assert.equal(r.body,'<p>x</p>');
+ try{assert.equal((await get('/client/..%2Fa.js')).status,403,'routes never leave their directory');assert.equal((await get('/layer.html')).status,404);}
+ finally{web.server.closeAllConnections?.();await web.close();}
+});

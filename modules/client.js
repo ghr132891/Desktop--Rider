@@ -44,8 +44,10 @@ if(window.desktopRider)Rider.register({
  // Overlay only when something is drawn on it: sample the alpha channel on a coarse grid.
  hasPixels(canvas){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;for(let i=3;i<d.length;i+=4*7)if(d[i])return true;return false;},
  // Live wallpaper (modules/live.js): the video plus where each piece goes on this monitor; null when not playing.
- async renderFor(m){const api=this.api,s={...api.clone(api.state),aspect:m.width/m.height};const background=await api.wallpaperCanvas(s,m.width,{layers:'background'}),overlay=await api.wallpaperCanvas(s,m.width,{layers:'overlay'});
+ async renderFor(m){const api=this.api,s={...api.clone(api.state),aspect:m.width/m.height};const background=await api.wallpaperCanvas(s,m.width,{layers:'background'});
   const liveModule=Rider.modules.find(x=>x.id==='live'),live=liveModule&&typeof liveModule.exportFor==='function'?await liveModule.exportFor(s,m.width,m.height):null;
+  // When the person is extracted per frame on the desktop, the overlay leaves the static copies out (the layer paints the moving ones).
+  const overlay=await api.wallpaperCanvas(s,m.width,{layers:'overlay',person:!(live&&live.person)});
   // Video layers (modules/layers.js) play in the layer window too: the files plus their frames / looks at this monitor's size.
   const layersModule=Rider.modules.find(x=>x.id==='layers'),clips=layersModule&&typeof layersModule.exportClips==='function'?await layersModule.exportClips(s,m.width,m.height):[];
   // 桌面歌词 (modules/lyrics.js): style in px for this monitor plus how to find the words; null when off.
