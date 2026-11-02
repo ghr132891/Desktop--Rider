@@ -3,7 +3,7 @@
 // which Chromium refuses over file://, so the client serves the repo (or the packaged web/
 // folder) exactly like tools/serve.py does for development.
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.tflite':'application/octet-stream','.bin':'application/octet-stream','.txt':'text/plain; charset=utf-8','.md':'text/plain; charset=utf-8'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.webm':'video/webm','.mp4':'video/mp4','.mov':'video/quicktime','.tflite':'application/octet-stream','.bin':'application/octet-stream','.txt':'text/plain; charset=utf-8','.md':'text/plain; charset=utf-8'};
 function resolveFile(root,urlPath){
  let p;try{p=decodeURIComponent(urlPath.split('?')[0]);}catch{return null;}
  if(p.endsWith('/'))p+='index.html';
@@ -23,9 +23,15 @@ function start(root,{host='127.0.0.1',port=0,api=null,routes={}}={}){
   if(!file){res.writeHead(403).end();return;}
   fs.stat(file,(error,stat)=>{
    if(error||!stat.isFile()){res.writeHead(404).end();return;}
-   res.writeHead(200,{'Content-Type':types[path.extname(file).toLowerCase()]||'application/octet-stream','Content-Length':stat.size,'Cache-Control':'no-cache'});
-   if(req.method==='HEAD'){res.end();return;}
-   fs.createReadStream(file).on('error',()=>res.destroy()).pipe(res);
+   // Range requests: <video> seeks and loops only when the server answers 206 for byte ranges.
+   const type=types[path.extname(file).toLowerCase()]||'application/octet-stream',range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range||'');
+   let start=0,end=stat.size-1,code=200;
+   if(range&&stat.size){if(range[1]===''&&range[2]!==''){start=Math.max(0,stat.size-Number(range[2]));}else{start=Number(range[1]||0);if(range[2]!=='')end=Math.min(end,Number(range[2]));}
+    if(start>end||start>=stat.size){res.writeHead(416,{'Content-Range':`bytes */${stat.size}`});res.end();return;}code=206;}
+   const headers={'Content-Type':type,'Content-Length':end-start+1,'Cache-Control':'no-cache','Accept-Ranges':'bytes'};if(code===206)headers['Content-Range']=`bytes ${start}-${end}/${stat.size}`;
+   res.writeHead(code,headers);
+   if(req.method==='HEAD'||stat.size===0){res.end();return;}
+   fs.createReadStream(file,{start,end}).on('error',()=>res.destroy()).pipe(res);
   });
  });
  return new Promise((resolve,reject)=>{server.on('error',reject);server.listen(port,host,()=>{const a=server.address();resolve({server,url:`http://${host}:${a.port}/`,port:a.port,close:()=>new Promise(r=>server.close(r))});});});

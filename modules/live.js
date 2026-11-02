@@ -162,10 +162,10 @@ Rider.register({
   const geo=this.api.geometry(s,w,h),dims={naturalWidth:this.video.videoWidth,naturalHeight:this.video.videoHeight},round=v=>Math.round(v*100)/100;
   const pieces=geo.polygons.map((points,i)=>{if(!points.length||s.pieces?.[i]?.image)return null;const p=this.api.piecePlacement(s,dims,w,h,points,i);return {polygon:points.map(([x,y])=>[round(x),round(y)]),x:round(p.x),y:round(p.y),w:round(p.w),h:round(p.h)};}).filter(Boolean);
   // Per-frame person extraction on the desktop: the cut box, how each copy sits on this monitor (px), and the inpainted still as the plate.
-  let person=null;if(m.person&&this.api.floating(s)&&this.cutScene?.cut&&!s.protectPerson){const view=this.cutScene,cut=view.cut;
+  let person=null;if(m.person&&this.api.floating(s)&&!s.protectPerson){const view=this.cutScene?.cut?this.cutScene:await this.api.scene(s).catch(()=>null),cut=view?.cut;if(cut){ // the preview's cut-out may still be resolving: fetch it directly (cached by picture + points)
    const copies=s.floatCopies.map(copy=>{const f=this.api.floatFrame(s,view,w,h,copy);return {left:round(f.left),top:round(f.top),w:round(f.w),h:round(f.h),rotate:copy.rotate||0,flip:!!copy.flip,opacity:copy.opacity??100,filter:this.api.copyFilter(copy,w,false)};});
    let plate=null;try{plate={type:'image/jpeg',bytes:await (await fetch(cut.backgroundUrl)).arrayBuffer()};}catch{}
-   person={box:cut.box,keepOriginal:s.floatKeepOriginal===true,shadow:s.floatShadow!==false,copies,plate};}
+   person={box:cut.box,keepOriginal:s.floatKeepOriginal===true,shadow:s.floatShadow!==false,copies,plate};}}
   return {name:m.name,type:this.file.type||'video/mp4',bytes:await this.file.arrayBuffer(),plan:{width:w,height:h,gapColor:s.gapColor,pieces},person};
  }
 });

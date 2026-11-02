@@ -172,6 +172,11 @@ test('live plan: person block and plate are validated; server routes map prefixe
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'dr-root-')),other=fs.mkdtempSync(path.join(os.tmpdir(),'dr-other-'));fs.writeFileSync(path.join(root,'a.js'),'1');fs.writeFileSync(path.join(other,'layer.html'),'<p>x</p>');
  const web=await server.start(root,{routes:{'/client/':other}});const get=p=>new Promise((resolve,reject)=>{http.get(web.url.replace(/\/$/,'')+p,{agent:false,headers:{Connection:'close'}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,type:res.headers['content-type'],body:b}));}).on('error',reject);});
  assert.equal((await get('/a.js')).status,200);const r=await get('/client/layer.html');assert.equal(r.status,200);assert.match(r.type,/text\/html/);assert.equal(r.body,'<p>x</p>');
- try{assert.equal((await get('/client/..%2Fa.js')).status,403,'routes never leave their directory');assert.equal((await get('/layer.html')).status,404);}
+ fs.writeFileSync(path.join(other,'clip.webm'),Buffer.from('0123456789'));
+ const rangeGet=(p,range)=>new Promise((resolve,reject)=>{http.get(web.url.replace(/\/$/,'')+p,{agent:false,headers:{Connection:'close',...(range?{Range:range}:{})}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,type:res.headers['content-type'],cr:res.headers['content-range'],ar:res.headers['accept-ranges'],body:b}));}).on('error',reject);});
+ try{assert.equal((await get('/client/..%2Fa.js')).status,403,'routes never leave their directory');assert.equal((await get('/layer.html')).status,404);
+  const full=await rangeGet('/client/clip.webm');assert.equal(full.status,200);assert.equal(full.type,'video/webm');assert.equal(full.ar,'bytes');assert.equal(full.body,'0123456789');
+  const part=await rangeGet('/client/clip.webm','bytes=2-5');assert.equal(part.status,206);assert.equal(part.body,'2345');assert.equal(part.cr,'bytes 2-5/10');
+  const tail=await rangeGet('/client/clip.webm','bytes=7-');assert.equal(tail.body,'789');assert.equal((await rangeGet('/client/clip.webm','bytes=-3')).body,'789');assert.equal((await rangeGet('/client/clip.webm','bytes=20-')).status,416);}
  finally{web.server.closeAllConnections?.();await web.close();}
 });
