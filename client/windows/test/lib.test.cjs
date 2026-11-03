@@ -81,6 +81,15 @@ test('power policy: lock and suspend always pause, cover and battery only with p
  assert.equal(decide({locked:true,powerSave:false}).reason,'locked');assert.equal(decide({suspended:true,covered:true}).reason,'suspended');
  assert.deepEqual(decide({locked:true,covered:true,onBattery:true}).reasons,['locked','covered','battery']);
 });
+test('media session: only Playing / Paused sessions drive the lyrics clock; idle players count as none',()=>{
+ const base={sessions:1,title:'歌',artist:'人',position:0};
+ assert.equal(native.mediaActive({...base,status:'Playing',playing:true}),true);
+ assert.equal(native.mediaActive({...base,status:'Paused'}),true,'a paused song keeps its position');
+ assert.equal(native.mediaActive({...base,status:4}),true);assert.equal(native.mediaActive({...base,status:'5'}),true);
+ for(const status of ['Closed','Opened','Changing','Stopped',0,1,2,3])assert.equal(native.mediaActive({...base,status}),false,'idle status '+status);
+ assert.equal(native.mediaActive({...base}),true,'older bridge output without status: any session');
+ assert.equal(native.mediaActive({sessions:0,playing:false}),false);assert.equal(native.mediaActive(null),false);
+});
 test('covering watcher: bridge arguments and line parsing',()=>{
  const native=require('../lib/native');
  const list=native.args('watch',{hwnd:42,left:0,top:0,width:1024,height:768});

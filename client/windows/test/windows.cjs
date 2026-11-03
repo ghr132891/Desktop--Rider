@@ -112,9 +112,13 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   // 3c. A video layer (modules/layers.js) plays in the layer window with its own frame and look: a 2 s WebM whose colour
   //     cycles becomes a layer above the person at a known spot (rotated, rounded); after applying, the layer window's
   //     canvas changes at the clip's centre between two reads while the wallpaper beside it stays put.
-  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=160;c.height=160;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
+  //     The clip is recorded from a canvas with captureStream(0) + requestFrame(): frames are pushed explicitly, so the file
+  //     decodes even when Chromium has stopped compositing the main window (hidden or fully occluded on a real PC — the
+  //     first real-machine run got an empty "视频无法解码" WebM from the automatic 30 fps capture).
+  await showMain(app);await page.waitForFunction(()=>document.visibilityState==='visible',null,{timeout:10000}).catch(()=>{});
+  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=160;c.height=160;const ctx=c.getContext('2d');const stream=c.captureStream(0),track=stream.getVideoTracks()[0];const rec=new MediaRecorder(stream,{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
    rec.onstop=()=>{const file=new File(chunks,'cycle.webm',{type:'video/webm'});Rider.modules.find(m=>m.id==='layers').addVideo(file).then(resolve,error=>reject(new Error(`${error.message}; recorded bytes=${file.size}, visibility=${document.visibilityState}, codec=${rec.mimeType}`)));};
-   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
+   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);track.requestFrame();if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers'),it=m.me().items.at(-1);Object.assign(it,{x:75,y:25,w:20,h:24,above:true,rotate:15,radius:20,blend:'normal',opacity:100});m.changed();});
   await page.waitForFunction(()=>document.querySelectorAll('.layer-item video').length===1&&!document.querySelector('.layer-item video').paused,null,{timeout:30000});log('video layer added',{item:await page.evaluate(()=>({...state.modules.layers.items.at(-1)}))});
   // Adding a layer switches the sidebar to the 图层 view; go back to the client view before applying.

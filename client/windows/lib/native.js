@@ -42,4 +42,8 @@ function create({runner=defaultRunner,spawner=defaultSpawner,platform=process.pl
    return {stop(){try{child.kill();}catch{}}};}
  };
 }
-module.exports={create,args,parse,hwndOf,lineReader,SCRIPT};
+// A media session worth following: Playing (4) or Paused (5). A player that is merely open (Closed / Opened / Changing /
+// Stopped) reports position 0 and would freeze the desktop lyrics on the first line — seen on a real Win11 PC with QQ音乐
+// idle in the background. Output from an older bridge without `status` keeps the previous "any session" behaviour.
+const mediaActive=m=>!!m&&m.sessions>0&&(m.status==null||/^(Playing|Paused|4|5)$/.test(String(m.status)));
+module.exports={create,args,parse,hwndOf,lineReader,mediaActive,SCRIPT};

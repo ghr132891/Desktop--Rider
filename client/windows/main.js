@@ -4,7 +4,7 @@
 // windows under the icons for the floating person, and lives in the tray with optional autostart.
 const {app,BrowserWindow,Tray,Menu,ipcMain,nativeImage,screen,shell,powerMonitor}=require('electron');
 const path=require('node:path'),fs=require('node:fs'),fsp=fs.promises,crypto=require('node:crypto');
-const server=require('./lib/server'),{create:createNative,hwndOf}=require('./lib/native'),native=createNative();
+const server=require('./lib/server'),{create:createNative,hwndOf,mediaActive}=require('./lib/native'),native=createNative();
 const WEB_ROOT=app.isPackaged?path.join(process.resourcesPath,'web'):path.join(__dirname,'..','..');
 const DATA=path.join(app.getPath('userData'),'desktop'),SETTINGS=path.join(app.getPath('userData'),'settings.json'),LAYERS=path.join(DATA,'layers.json'),MASCOTS=path.join(DATA,'mascots.json'),MASCOT_API=path.join(app.getPath('userData'),'mascot-api.json');
 const startHidden=process.argv.includes('--hidden');
@@ -75,7 +75,7 @@ function watchEntry(entry){entry.watcher?.stop();entry.watcher=null;entry.covere
 // ---- 桌面歌词: one system-media watcher for all layers; words per track from 网易云 / QQ音乐 (lib/lyrics.js) ----
 const mediaState={watcher:null,last:null};const lyricCache=new Map();
 const inLayer=(entry,code)=>{if(entry.window.isDestroyed())return;const wc=entry.window.webContents,send=()=>wc.executeJavaScript(code).catch(()=>{});if(wc.isLoading())wc.once('did-finish-load',send);else send();};
-const trackKey=m=>m&&m.sessions>0&&(m.title||m.artist)?`${m.title}\n${m.artist}`:'';
+const trackKey=m=>mediaActive(m)&&(m.title||m.artist)?`${m.title}\n${m.artist}`:''; // idle (stopped / just opened) players count as no session
 function lyricsEntry(entry){if(!entry.lyrics){entry.lyricsState=null;mediaWatchSync();return;}
  const src=entry.lyrics.source,manual=src.mode==='manual'?LyricsView.parse(src.lrc):[];entry.lyricLines=manual;entry.lyricsState={track:null,playing:false,lines:manual.length,source:src.mode==='manual'?'manual':'',words:manual.some(l=>l.words),error:'',key:''};
  mediaWatchSync();if(mediaState.last)onMedia(mediaState.last);}

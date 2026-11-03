@@ -36,6 +36,7 @@ Windows 上：PowerShell 里 `$env:PLAYWRIGHT_PATH='C:\path\to\node_modules\play
 - 提交信息：一行主题 + 空行 + 说明为什么与做了什么；AI 生成的提交末尾加 `Co-Authored-By: <模型名> <noreply@…>`。
 - `artifacts/` 下的 PNG 由测试重新生成，提交前 `git checkout -- artifacts/`，不要把它们混进功能提交。
 - 不引入构建步骤、打包器或运行时依赖；客户端只有 Electron 与 electron-builder（开发依赖）。
+- `client/windows/native/bridge.ps1` 必须保留开头的 UTF-8 BOM（文件前三个字节 EF BB BF）：中文 Windows 的 PowerShell 5.1 没有 BOM 会按 GBK 解码内嵌 C#，`Add-Type` 直接编译失败。有单元测试守着；用会去掉 BOM 的编辑器或 `utf-8-sig` 读写要小心。
 - 中文 UI 与文档；代码注释英文或中文皆可，但要说明"为什么"。
 - 模块状态只放可 JSON 化的数据；大文件（视频）进 IndexedDB，方案里只存元数据。
 - 带 `view` 的模块在自己视图下才接收指针，并让其他浮层穿透（见 `docs/modules.md` 的"编辑态置顶"）。
@@ -43,6 +44,6 @@ Windows 上：PowerShell 里 `$env:PLAYWRIGHT_PATH='C:\path\to\node_modules\play
 
 ## 当前状态与待办
 
-- 真机未测：托盘、开机启动、锁屏 / 电池暂停、多显示器、真实播放器的歌词跟随、小人物交互手感——清单在 `client/windows/REAL-DEVICE-TEST.md`，按编号反馈。
+- 真机进度：2026-11-02 在一台中文 Win11（10.0.26200）上 `npm test` / `npm run smoke` / `node test/windows.cjs` 全部通过（修掉了 bridge.ps1 的 BOM 问题）。仍待人工验证：托盘、开机启动、锁屏 / 电池暂停、多显示器、真实播放器连续播放的歌词跟随、小人物交互手感——清单与进度在 `client/windows/REAL-DEVICE-TEST.md`，按编号反馈。
 - 已知限制：网易云逐字歌词需要加密 eapi（未接）；半身壁纸不会补全全身（见 `docs/mascot-api.md` 的外部 AI 流程）；安装包未签名、无自动更新。
 - 下一步候选：系统回环音频分析（歌词与小人物对真实声音反应）、第三方模块加载入口、把浏览器回归放进 CI。
