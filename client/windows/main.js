@@ -48,18 +48,22 @@ function showMain(){if(!mainWindow)createMain();mainWindow.show();mainWindow.foc
 function createTray(){
  const icon=nativeImage.createFromPath(path.join(__dirname,'assets','tray.png'));
  tray=new Tray(icon);tray.setToolTip('Desktop Rider');
- const rebuild=()=>tray.setContextMenu(Menu.buildFromTemplate([
+ updateTrayMenu();tray.on('double-click',showMain);
+}
+function updateTrayMenu(){
+ if(!tray||tray.isDestroyed())return;
+ tray.setContextMenu(Menu.buildFromTemplate([
   {label:'打开 Desktop Rider',click:showMain},
   {label:'隐藏桌面层',click:async()=>{for(const id of [...layers.keys()])await clearLayer(id);}},
   {type:'separator'},
-  {label:'开机启动',type:'checkbox',checked:settings.openAtLogin,click:async item=>{await setSettings({openAtLogin:item.checked});rebuild();}},
-  {label:'节能：桌面被遮住或用电池时暂停视频',type:'checkbox',checked:settings.powerSave!==false,click:async item=>{await setSettings({powerSave:item.checked});rebuild();}},
+  {label:'开机启动',type:'checkbox',checked:settings.openAtLogin,click:item=>setSettings({openAtLogin:item.checked})},
+  {label:'节能：桌面被遮住或用电池时暂停视频',type:'checkbox',checked:settings.powerSave!==false,click:item=>setSettings({powerSave:item.checked})},
   {type:'separator'},
   {label:'退出',click:()=>{quitting=true;app.quit();}}]));
- rebuild();tray.on('double-click',showMain);
 }
 function applyLoginItem(){if(process.platform==='win32'||process.platform==='darwin')app.setLoginItemSettings({openAtLogin:!!settings.openAtLogin,args:['--hidden']});}
-async function setSettings(patch){if(patch&&typeof patch.openAtLogin==='boolean')settings.openAtLogin=patch.openAtLogin;if(patch&&typeof patch.powerSave==='boolean')settings.powerSave=patch.powerSave;await writeJson(SETTINGS,settings);applyLoginItem();powerAll();return settings;}
+// Both panel IPC and tray clicks must refresh the menu after settings are saved.
+async function setSettings(patch){if(patch&&typeof patch.openAtLogin==='boolean')settings.openAtLogin=patch.openAtLogin;if(patch&&typeof patch.powerSave==='boolean')settings.powerSave=patch.powerSave;await writeJson(SETTINGS,settings);applyLoginItem();powerAll();updateTrayMenu();return settings;}
 // ---- power saving for the layer videos (lib/power.js decides; layer.html pauses) ----
 const power={locked:false,onBattery:false,suspended:false};
 const hasVideo=e=>!!(e.live||(e.clips&&e.clips.length)||e.lyrics); // anything that moves on its own → power rules apply

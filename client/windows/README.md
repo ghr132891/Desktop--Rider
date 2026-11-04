@@ -66,13 +66,17 @@ npm run dist
 
 ## 验证
 
-运行器测不到的部分（托盘、开机启动、锁屏 / 电池暂停、多显示器、性能）见 [REAL-DEVICE-TEST.md](REAL-DEVICE-TEST.md)，按编号在 Win11 真机上过一遍。
+运行器测不到的部分（托盘实际交互、登录时自动启动、锁屏 / 电池暂停、多显示器、性能）见 [REAL-DEVICE-TEST.md](REAL-DEVICE-TEST.md)，按编号在 Win11 真机上过一遍。
 
 ```bash
 npm test                # 单元测试（任何系统）
-npm run smoke           # Electron 启动烟测（任何系统）
+npm run smoke           # Electron 启动烟测、设置面板与托盘勾选同步（任何系统）
 node test/windows.cjs   # 仅 Windows：真调用桥、回查系统状态、截图
 ```
+
+2026-11-04 修复托盘设置不同步：菜单原先只在启动或点击托盘选项时重建，面板经 IPC 修改设置后仍显示旧勾选。现在统一在 `setSettings()` 保存成功后刷新菜单。烟测通过真实面板、IPC 和 Electron 菜单验证「开机启动」「节能暂停」反复开关及两项互不覆盖，也检查托盘选项原有行为。测试使用独立临时数据目录，并替换系统登录项接口以避免修改当前用户的开机启动；真实托盘鼠标交互及注销后自启动仍按真机清单验证。
+
+本次已在 Windows 本机通过 15 项客户端单元测试及扩展后的 Electron 烟测；未重新运行完整桌面桥集成测试。
 
 仓库根目录另有 `node tools/verify-client.cjs`，用假的 `window.desktopRider` 在普通 Chromium 中验证网页侧模块与分层渲染。
 
