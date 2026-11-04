@@ -44,6 +44,7 @@ Windows 上：PowerShell 里 `$env:PLAYWRIGHT_PATH='C:\path\to\node_modules\play
 
 ## 当前状态与待办
 
+- 最近修复（2026-11-04）：视频图层导入失败后不再残留播放对象、对象 URL 或 IndexedDB 文件；视频校验及容量复查通过后才持久化。新增 `tools/verify-layer-video.cjs`，与原有画布回归均已在 Windows Chrome 通过。原因、验证范围与测试夹具注意事项见 [模块修复记录](docs/modules.md#修复记录)。
 - 真机进度：2026-11-02 在一台中文 Win11（10.0.26200）上 `npm test` / `npm run smoke` / `node test/windows.cjs` 全部通过（修掉了 bridge.ps1 的 BOM 问题）。仍待人工验证：托盘、开机启动、锁屏 / 电池暂停、多显示器、真实播放器连续播放的歌词跟随、小人物交互手感——清单与进度在 `client/windows/REAL-DEVICE-TEST.md`，按编号反馈。
 - 已知限制：网易云逐字歌词需要加密 eapi（未接）；半身壁纸不会补全全身（见 `docs/mascot-api.md` 的外部 AI 流程）；安装包未签名、无自动更新。
 - 下一步候选：系统回环音频分析（歌词与小人物对真实声音反应）、第三方模块加载入口、把浏览器回归放进 CI。

@@ -69,17 +69,32 @@ const LayersModule=Rider.register({
  // Videos: blob in IndexedDB under the item id, an object URL for the <video> in the preview.
  db(){return this._db??=new Promise((resolve,reject)=>{const r=indexedDB.open('desktop-rider-layers',1);r.onupgradeneeded=()=>r.result.createObjectStore('files');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
  async store(op,key,value){const db=await this.db();return new Promise((resolve,reject)=>{const st=db.transaction('files','readwrite').objectStore('files'),q=op==='get'?st.get(key):op==='put'?st.put(value,key):st.delete(key);q.onsuccess=()=>resolve(q.result??null);q.onerror=()=>reject(q.error);});},
- keepVideo(id,blob){const url=URL.createObjectURL(blob),video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src:url});video.className='layer-video';this.videos.set(id,{blob,url,video});this.store('put',id,blob).catch(()=>this.api.toast('视频无法写入浏览器存储，刷新后需重新添加'));video.play().catch(()=>{});return video;},
+ saveVideo(id,blob){this.store('put',id,blob).catch(()=>this.api.toast('视频无法写入浏览器存储，刷新后需重新添加'));},
+ keepVideo(id,blob,{persist=true}={}){const url=URL.createObjectURL(blob),video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src:url});video.className='layer-video';this.videos.set(id,{blob,url,video});if(persist)this.saveVideo(id,blob);video.play().catch(()=>{});return video;},
+ releaseVideo(id){const v=this.videos.get(id);if(!v)return;v.video.pause();v.video.removeAttribute('src');v.video.load();URL.revokeObjectURL(v.url);this.videos.delete(id);},
  async addVideo(file){
   if(!/^video\//.test(file.type||''))throw new Error('请选择 MP4 或 WebM 视频');if(file.size>300*1024*1024)throw new Error('视频需小于 300 MB');
-  const id=this.newId(),video=this.keepVideo(id,file);await new Promise((resolve,reject)=>{video.addEventListener('loadedmetadata',resolve,{once:true});video.addEventListener('error',()=>reject(new Error('视频无法解码')),{once:true});});
-  const w=40,h=Math.min(300,w*this.api.state.aspect*video.videoHeight/video.videoWidth);const m=this.me();if(m.items.length>=24){this.videos.delete(id);throw new Error('最多 24 个图层');}
-  const it={id,type:'video',name:file.name.replace(/\.[^.]+$/,'').slice(0,40)||'视频',x:50,y:50,w,h,rotate:0,opacity:100,blur:0,hue:0,saturate:100,brightness:100,radius:0,blend:'normal',flipX:false,above:false,hidden:false,locked:false,fit:'cover',shape:'rect',fill:'#4278df',fill2:null,src:null,video:{name:file.name.slice(0,80),width:video.videoWidth,height:video.videoHeight}};
-  m.items.push(it);m.active=id;this.changed();this.api.setView('layers');this.api.toast('已添加视频图层「'+file.name+'」');
+  if(this.me().items.length>=24)throw new Error('最多 24 个图层');
+  // Do not persist a provisional import: a later decode/capacity failure must leave no orphan blob.
+  const id=this.newId(),video=this.keepVideo(id,file,{persist:false});
+  try{
+   await new Promise((resolve,reject)=>{
+    const cleanup=()=>{video.removeEventListener('loadedmetadata',loaded);video.removeEventListener('error',failed);};
+    const loaded=()=>{cleanup();resolve();},failed=()=>{cleanup();reject(new Error('视频无法解码'));};
+    video.addEventListener('loadedmetadata',loaded);video.addEventListener('error',failed);
+   });
+   if(!video.videoWidth||!video.videoHeight)throw new Error('视频无法解码');
+   // Other imports or shape additions can fill the last slot while metadata is loading.
+   const m=this.me();if(m.items.length>=24)throw new Error('最多 24 个图层');
+   const w=40,h=Math.min(300,w*this.api.state.aspect*video.videoHeight/video.videoWidth);
+   const it={id,type:'video',name:file.name.replace(/\.[^.]+$/,'').slice(0,40)||'视频',x:50,y:50,w,h,rotate:0,opacity:100,blur:0,hue:0,saturate:100,brightness:100,radius:0,blend:'normal',flipX:false,above:false,hidden:false,locked:false,fit:'cover',shape:'rect',fill:'#4278df',fill2:null,src:null,video:{name:file.name.slice(0,80),width:video.videoWidth,height:video.videoHeight}};
+   m.items.push(it);m.active=id;
+  }catch(error){this.releaseVideo(id);throw error;}
+  this.saveVideo(id,file);this.changed();this.api.setView('layers');this.api.toast('已添加视频图层「'+file.name+'」');
  },
  async restoreVideos(){for(const it of this.me().items)if(it.type==='video'&&!this.videos.has(it.id)){try{const blob=await this.store('get',it.id);if(blob){const url=URL.createObjectURL(blob),video=Object.assign(document.createElement('video'),{muted:true,loop:true,playsInline:true,preload:'auto',src:url});video.className='layer-video';this.videos.set(it.id,{blob,url,video});video.play().catch(()=>{});}}catch{}}this.api.scheduleRender();},
  move(dir){const m=this.me(),i=m.items.findIndex(it=>it.id===m.active),j=i+dir;if(i<0||j<0||j>=m.items.length)return;[m.items[i],m.items[j]]=[m.items[j],m.items[i]];this.changed();},
- remove(it){if(!it)return;const m=this.me();m.items=m.items.filter(x=>x!==it);if(m.active===it.id)m.active=null;if(it.type==='video'){const v=this.videos.get(it.id);if(v){URL.revokeObjectURL(v.url);v.video.pause();this.videos.delete(it.id);}this.store('delete',it.id).catch(()=>{});}this.changed();},
+ remove(it){if(!it)return;const m=this.me();m.items=m.items.filter(x=>x!==it);if(m.active===it.id)m.active=null;if(it.type==='video'){this.releaseVideo(it.id);this.store('delete',it.id).catch(()=>{});}this.changed();},
  // Geometry in desktop pixels: the box is centred on (x,y) with w/h in % of the desktop.
  frame(it,w,h){const bw=it.w/100*w,bh=it.h/100*h;return {left:it.x/100*w-bw/2,top:it.y/100*h-bh/2,w:bw,h:bh,cx:it.x/100*w,cy:it.y/100*h};},
  filter(it,w){const f=[];if(it.blur)f.push(`blur(${it.blur/100*w}px)`);if(it.hue)f.push(`hue-rotate(${it.hue}deg)`);if(it.saturate!==100)f.push(`saturate(${it.saturate/100})`);if(it.brightness!==100)f.push(`brightness(${it.brightness/100})`);return f.join(' ')||'none';},
