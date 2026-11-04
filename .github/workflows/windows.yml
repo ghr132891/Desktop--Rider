@@ -5,32 +5,31 @@
 # Each run uploads desktop screenshots + report.json; the dist job uploads the x64 installer.
 name: Windows client
 
+# Keep both path lists in sync. Root JS/CSS includes shared renderers and workers;
+# listing individual files here used to miss changes to lyrics, mascot and live-person code.
 on:
   push:
     branches: [main]
     paths:
       - 'client/**'
       - '!client/windows/README.md'
-      - 'core.js'
-      - 'app.js'
-      - 'cutout.js'
-      - 'portrait.js'
-      - 'wallpaper-engine.js'
-      - '*-worker.js'
+      - '*.js'
+      - '*.css'
       - 'modules/**'
       - 'index.html'
-      - 'styles.css'
       - 'vendor/**'
       - 'assets/**'
       - '.github/workflows/windows.yml'
   pull_request:
     paths:
       - 'client/**'
-      - 'core.js'
-      - 'app.js'
+      - '!client/windows/README.md'
+      - '*.js'
+      - '*.css'
       - 'modules/**'
       - 'index.html'
-      - 'styles.css'
+      - 'vendor/**'
+      - 'assets/**'
       - '.github/workflows/windows.yml'
   workflow_dispatch:
 
