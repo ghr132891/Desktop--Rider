@@ -27,7 +27,7 @@ Windows 上：PowerShell 里 `$env:PLAYWRIGHT_PATH='C:\path\to\node_modules\play
 ## 测试与 CI
 
 - 每个功能都有对应的 `tools/verify-*.cjs`，README「验证」一节列了各套件覆盖什么。改了行为就改或加断言；新模块加新套件。
-- `tools/verify-live.cjs` 的背景板学习断言对机器负载敏感，单独失败时先重跑一次。
+- `tools/verify-live.cjs` 的背景板学习断言和 `tools/verify-layer-video.cjs` 的纯音轨夹具对机器负载敏感（和 Electron 烟测同时跑时见过一次失败），单独失败时先重跑一次。
 - `.github/workflows/windows.yml` 在 `windows-2025`（Win11 24H2 内核，Progman 分支）和 `windows-2022`（Win10 内核，WorkerW 分支）上跑客户端：单元测试、烟测、`test/windows.cjs` 真桌面集成、x64 安装包。日志需要登录才能看，所以每步失败都会以注解（annotation）形式写到公开的运行页面：`test/ci-run.cjs` 包装每个步骤，`test/windows.cjs` 自己也输出 `::error` / `::notice`。看结果直接开 Actions 页面即可。
 - 推送到 `main` 或更新拉取请求时，客户端代码、根目录 JS/CSS、`index.html`、`modules/`、`assets/`、`vendor/` 及工作流自身的修改会触发 CI；两种事件的路径清单须保持一致。仅修改根目录或客户端 `README.md` 不触发。新增共享代码时同时核对客户端打包清单 `extraResources` 与 CI 路径覆盖。
 

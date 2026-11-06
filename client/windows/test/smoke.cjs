@@ -19,7 +19,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
  assert.ok(await page.evaluate(()=>Rider.modules.some(m=>m.id==='client')));
  await page.locator('[data-view="client"]').click();await page.waitForFunction(()=>document.querySelectorAll('.client-monitor').length>0);
  const monitors=await page.evaluate(()=>desktopRider.monitors());assert.ok(monitors.length>=1&&monitors[0].width>0&&typeof monitors[0].id==='string');
- assert.equal(path.resolve(await app.evaluate(({app})=>app.getPath('userData'))),path.resolve(userData));
+ assert.equal(fs.realpathSync(await app.evaluate(({app})=>app.getPath('userData'))),fs.realpathSync(userData)); // macOS: /var is a symlink to /private/var
  const trayState=()=>app.evaluate(()=>({
   updates:global.__smoke.menuUpdates,
   checks:global.__smoke.menu.items.filter(item=>item.type==='checkbox').map(item=>({label:item.label,checked:item.checked})),
