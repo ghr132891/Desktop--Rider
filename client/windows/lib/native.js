@@ -30,10 +30,11 @@ function create({runner=defaultRunner,spawner=defaultSpawner,platform=process.pl
   getWallpaper:monitorId=>run('get-wallpaper',{monitorId}).then(r=>r.path||''),
   layerInfo:hwnd=>run('layer-info',{hwnd}),
   covering:(hwnd,rect)=>run('covering',{hwnd,left:rect.left,top:rect.top,width:rect.width,height:rect.height}),
-  media:()=>run('media'),
-  // System media session (SMTC) watcher: onState gets {sessions,playing,status,app,title,artist,album,position,duration,updated} on change.
+  media:()=>run('media').then(normalizeMedia),
+  // SMTC observations retain the raw status/timeline and expose normalized playing + playingInferred.
   watchMedia(onState){if(platform!=='win32')return {stop(){}};const child=spawner(args('watch-media'));
-   child.stdout.on('data',lineReader(line=>{try{onState(JSON.parse(line));}catch{}}));child.stderr?.on('data',()=>{});child.on('error',()=>{});return {stop(){try{child.kill();}catch{}}};},
+   child.stdout.setEncoding?.('utf8'); // A Chinese song title can span two pipe chunks.
+   child.stdout.on('data',lineReader(line=>{try{onState(normalizeMedia(JSON.parse(line)));}catch{}}));child.stderr?.on('data',()=>{});child.on('error',()=>{});return {stop(){try{child.kill();}catch{}}};},
   // Keeps one bridge process alive that reports whether the monitor's desktop is hidden by a window; onState gets each
   // change as {covered, hwnd?, class?, zoomed?, …}. Returns {stop()}. No-op off Windows.
   watchCovering(hwnd,rect,onState){if(platform!=='win32')return {stop(){}};
@@ -42,8 +43,20 @@ function create({runner=defaultRunner,spawner=defaultSpawner,platform=process.pl
    return {stop(){try{child.kill();}catch{}}};}
  };
 }
-// A media session worth following: Playing (4) or Paused (5). A player that is merely open (Closed / Opened / Changing /
-// Stopped) reports position 0 and would freeze the desktop lyrics on the first line — seen on a real Win11 PC with QQ音乐
-// idle in the background. Output from an older bridge without `status` keeps the previous "any session" behaviour.
-const mediaActive=m=>!!m&&m.sessions>0&&(m.status==null||/^(Playing|Paused|4|5)$/.test(String(m.status)));
-module.exports={create,args,parse,hwndOf,lineReader,mediaActive,SCRIPT};
+// QQMusic 22.13 was observed advancing its timeline while reporting Changing (2). Only accept that
+// QQMusic-specific contradiction with a usable song/timeline and mutually exclusive Pause/Play controls;
+// neither an idle Opened session nor a position jump while Paused is evidence of playback.
+const changingPlayback=m=>!!m&&m.sessions>0&&/^(Changing|2)$/.test(String(m.status))&&
+ typeof m.app==='string'&&path.win32.basename(m.app).toLowerCase()==='qqmusic.exe'&&
+ typeof m.title==='string'&&!!m.title.trim()&&Number.isFinite(m.duration)&&m.duration>0&&
+ Number.isFinite(m.position)&&m.position>=0&&m.position<=m.duration+1&&
+ m.controls?.pauseEnabled===true&&m.controls?.playEnabled===false;
+function normalizeMedia(m){
+ if(!m||typeof m!=='object'||Array.isArray(m))return m;
+ const inferred=changingPlayback(m),playing=m.sessions>0&&(m.status==null?m.playing===true:/^(Playing|4)$/.test(String(m.status))||inferred);
+ return {...m,playing,playingInferred:inferred};
+}
+// Older bridges without status keep the previous "any session" behaviour. Idle Closed / Opened /
+// Stopped and unqualified Changing sessions remain inactive, so manual lyrics can use their own clock.
+const mediaActive=m=>!!m&&m.sessions>0&&(m.status==null||/^(Playing|Paused|4|5)$/.test(String(m.status))||changingPlayback(m));
+module.exports={create,args,parse,hwndOf,lineReader,mediaActive,normalizeMedia,SCRIPT};

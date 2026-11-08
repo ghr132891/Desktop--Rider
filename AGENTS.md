@@ -44,6 +44,8 @@ Windows 上：PowerShell 里 `$env:PLAYWRIGHT_PATH='C:\path\to\node_modules\play
 
 ## 当前状态与待办
 
+- 最近修复（2026-11-08）：桌面歌词针对 QQ音乐异常 `Changing` 状态增加受限兼容，媒体轮询改为 250ms；换曲先清除旧歌词并隔离旧取词请求，按有效时间戳校正播放时钟，暂停恢复和换曲各自重建时间基准。44 项客户端测试及 Electron 烟测通过，已用真实 QQ音乐复测；网易云未安装，仍待验证。详见 [桌面歌词真机记录](client/windows/REAL-DEVICE-TEST.md#7-桌面歌词运行器没有播放器跟随播放只能真机测)。
+- 最近修复（2026-11-08）：客户端把完整的显示器设计记录与活动窗口分开保存，离线屏幕不会因启动恢复或其他屏幕更新而丢记录；重连并重启后可恢复。`npm test` 新增多显示器恢复回归，25 项通过；本机 Electron 模拟断连/重连验证与烟测通过，实体拔插和不同缩放仍需按真机清单验证。详见 [客户端验证记录](client/windows/README.md#验证)。
 - 最近修复（2026-11-04）：视频图层导入失败后不再残留播放对象、对象 URL 或 IndexedDB 文件；视频校验及容量复查通过后才持久化。新增 `tools/verify-layer-video.cjs`，与原有画布回归均已在 Windows Chrome 通过。原因、验证范围与测试夹具注意事项见 [模块修复记录](docs/modules.md#修复记录)。
 - 真机进度：2026-11-02 在一台中文 Win11（10.0.26200）上 `npm test` / `npm run smoke` / `node test/windows.cjs` 全部通过（修掉了 bridge.ps1 的 BOM 问题）。仍待人工验证：托盘、开机启动、锁屏 / 电池暂停、多显示器、真实播放器连续播放的歌词跟随、小人物交互手感——清单与进度在 `client/windows/REAL-DEVICE-TEST.md`，按编号反馈。
 - 已知限制：网易云逐字歌词需要加密 eapi（未接）；半身壁纸不会补全全身（见 `docs/mascot-api.md` 的外部 AI 流程）；安装包未签名、无自动更新。

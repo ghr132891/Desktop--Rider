@@ -80,11 +80,22 @@ if(lyricsCfg&&lyricsCfg.style&&q.get('lib')){
  loadScript(q.get('lib')).then(()=>{const LV=window.LyricsView,st=lyricsCfg.style;let lines=Array.isArray(lyricsCfg.lines)?lyricsCfg.lines:[],media=null,started=Date.now();
   const view=LV.create(box);view.setStyle(st);view.setLines(lines);window.__lyrics.ready=true;window.__lyrics.lines=lines.length;
   const now=()=>{const off=Number(st.offset)||0;if(media)return media.position+(media.playing?(Date.now()-media.at)/1000:0)+off;if(!lines.length)return 0;const span=lines[lines.length-1].end+3;return ((Date.now()-started)/1000)%span+off;};
-  const tick=()=>{if(window.__paused)return;box.hidden=!lines.length;if(!lines.length)return;const t=now();view.render(t);window.__lyrics.index=view.current;window.__lyrics.line=lines[view.current]?.text||'';window.__lyrics.ticks++;};
+  const tick=()=>{box.hidden=!lines.length;if(!lines.length){window.__lyrics.index=-1;window.__lyrics.line='';return;}if(window.__paused)return;const t=now();view.render(t);window.__lyrics.index=view.current;window.__lyrics.line=lines[view.current]?.text||'';window.__lyrics.ticks++;};
   let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop);};
   pauseHooks.push(paused=>{cancelAnimationFrame(raf);if(!paused)raf=requestAnimationFrame(loop);});
-  window.__setLyrics=({lines:l,source,words,error}={})=>{lines=Array.isArray(l)?l:[];started=Date.now();view.setLines(lines);Object.assign(window.__lyrics,{lines:lines.length,source:source||'',words:!!words,error:error||''});tick();};
-  window.__setMedia=m=>{media=m&&typeof m.position==='number'?{position:m.position,playing:!!m.playing,at:Date.now()}:null;window.__lyrics.media=media?{position:media.position,playing:media.playing}:null;tick();};
+  window.__setLyrics=({lines:l,source,words,error}={})=>{lines=Array.isArray(l)?l:[];started=Date.now();view.setLines(lines);Object.assign(window.__lyrics,{lines:lines.length,line:'',index:-1,source:source||'',words:!!words,error:error||''});
+   // The shared view hides empty lines but retains transition slots. Remove their old content even while power-paused.
+   if(!lines.length){if(lyricsCfg.mode==='auto'){media=null;window.__lyrics.media=null;} // A new track may initially report exactly the old timeline.
+    box.querySelectorAll('.lyrics-line,.lyrics-trans,.lyrics-next').forEach(el=>{el.replaceChildren();el.classList.remove('in','out');});}tick();};
+  window.__setMedia=m=>{if(m&&Number.isFinite(m.position)){
+    const playing=!!m.playing,updated=Number.isFinite(m.updated)?m.updated:null;
+    // Keep one anchor for repeated samples; re-anchoring an unchanged position on every poll makes lyrics stutter.
+    if(!media||media.position!==m.position||media.playing!==playing||media.updated!==updated){const received=Date.now(),age=updated===null?-1:received-updated;
+     // Some players resume before publishing a new timeline. Its old timestamp includes paused time, not playback.
+     const resumedUnchanged=playing&&media&&!media.playing&&media.position===m.position&&media.updated===updated;
+     media={position:m.position,playing,updated,at:playing&&!resumedUnchanged&&age>=0&&age<=5000?updated:received};}
+   }else{media=null;if(lyricsCfg.mode==='auto')window.__setLyrics({lines:[]});}
+   window.__lyrics.media=media?{position:media.position,playing:media.playing,updated:media.updated}:null;tick();};
   if(!window.__paused)raf=requestAnimationFrame(loop);}).catch(()=>{window.__lyrics.error='lyrics-view.js 加载失败';});
 }
 </script></body></html>

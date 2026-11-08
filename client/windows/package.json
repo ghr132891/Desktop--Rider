@@ -9,7 +9,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/lib.test.cjs",
+    "test": "node --test test/lib.test.cjs test/restore.test.cjs test/media.test.cjs test/lyrics-sync.test.cjs",
     "smoke": "node test/smoke.cjs",
     "pack": "electron-builder --win --dir",
     "dist": "electron-builder --win"

@@ -51,7 +51,7 @@ npm run dist
 | `test/screenshot.ps1` | 整个虚拟屏幕截图（供上面的测试与 CI artifact 使用） |
 | `../../.github/workflows/windows.yml` | GitHub Actions：在 `windows-2025`（Win11 24H2 内核）与 `windows-2022` 上跑全部测试并上传截图；另一个任务产出 x64 安装包 |
 
-分割线为弧形 / 波浪时方案里的多边形最多 50 个点（校验上限 128）；换成自己图片的分区不在播放方案里，层页面把静帧 PNG 铺在底下，那块就显示静帧。萌版人物：`apply` 的 `mascot` 载荷经 `checkMascot` 校验后，每台显示器开一个 `mascot.html` 窗口（脚下位置、大小来自样式），`mascots.json` 记录以便重启恢复；主进程每 0.4 s 把歌词控制器的播放位置换算成当前句、进度与"能量"（字数 / 时长）推给窗口，锁屏 / 休眠时暂停。外部 AI 接口挂在回环静态服务上（`lib/server.js` 的 `api` 钩子）：`/api/mascot/command|state|rig|events`，令牌随机生成写在 `%APPDATA%\desktop-rider-windows\mascot-api.json`，详见 `docs/mascot-api.md`。桌面歌词：只要有层窗口开着歌词，主进程就起一个常驻的 `bridge.ps1 -Command watch-media` 进程，每秒通过 WinRT 的 `GlobalSystemMediaTransportControlsSessionManager` 读取系统媒体会话（QQ音乐、网易云音乐、Spotify、浏览器等凡是向 Windows 媒体控件报告曲目的播放器），曲目 / 状态 / 位置变化时输出一行 JSON；曲目变化后按歌名 + 歌手在所选歌词站（`lib/lyrics.js`：网易云音乐、QQ音乐，或先网易云后 QQ）搜索并取 LRC（含翻译），缓存后推给层窗口；位置每秒同步一次，层窗口在两次更新之间按时间插值。手动 LRC 模式也跟随播放器位置；没有媒体会话时层窗口用自己的时钟循环。节能：每个有视频的层窗口由一个常驻的 `bridge.ps1 -Command watch` 进程每秒检查该显示器的桌面是否被可见、未最小化、未 cloaked、非点击穿透的顶层窗口最大化或整幅覆盖（排除 Progman / WorkerW / 任务栏等外壳窗口），状态变化时输出一行 JSON；主进程结合 `powerMonitor` 的锁屏 / 电池 / 休眠事件由 `lib/power.js` 决定是否暂停，并调用层页面的 `window.__setPaused`。层页面只在视频出新帧时重绘（`requestVideoFrameCallback`），暂停时零重绘。逐帧人物提取：预览里的算法在 `live-person.js`（网页根目录，随 web 资源打包）里有一份独立实现供层窗口使用——每帧 384 px 分割、70/30 时域平滑、三张 alpha 图、以补全底图初始化并向无人区域学习的背景板；层窗口合成顺序为 静帧 → 分区视频 → 遮盖块 → 人物之下的视频层 → 移动副本 → 叠加 PNG → 人物之上的视频层。图层模块的视频层（最多 6 个）作为 `clips` 一起交给客户端：每个视频写成 `<key>-clip-<n>-<stamp>.<ext>`，层页面按方案在同一块画布上逐帧绘制——静帧壁纸、动态壁纸分块、人物之下的视频层、叠加 PNG、人物之上的视频层——变换、圆角、滤镜与混合模式与预览一致（混合模式以画布里的内容为底）。
+分割线为弧形 / 波浪时方案里的多边形最多 50 个点（校验上限 128）；换成自己图片的分区不在播放方案里，层页面把静帧 PNG 铺在底下，那块就显示静帧。萌版人物：`apply` 的 `mascot` 载荷经 `checkMascot` 校验后，每台显示器开一个 `mascot.html` 窗口（脚下位置、大小来自样式），`mascots.json` 记录以便重启恢复；主进程每 0.4 s 把歌词控制器的播放位置换算成当前句、进度与"能量"（字数 / 时长）推给窗口，锁屏 / 休眠时暂停。外部 AI 接口挂在回环静态服务上（`lib/server.js` 的 `api` 钩子）：`/api/mascot/command|state|rig|events`，令牌随机生成写在 `%APPDATA%\desktop-rider-windows\mascot-api.json`，详见 `docs/mascot-api.md`。桌面歌词：只要有层窗口开着歌词，主进程就起一个常驻的 `bridge.ps1 -Command watch-media` 进程，每 250ms 通过 WinRT 的 `GlobalSystemMediaTransportControlsSessionManager` 读取系统媒体会话（QQ音乐、网易云音乐、Spotify、浏览器等凡是向 Windows 媒体控件报告曲目的播放器），曲目 / 状态 / 位置变化时输出一行 JSON；曲目变化后按歌名 + 歌手在所选歌词站（`lib/lyrics.js`：网易云音乐、QQ音乐，或先 QQ 后网易云）搜索并取 LRC（含翻译），缓存后推给层窗口；媒体状态与位置每 250ms 检查一次，层窗口按系统时间线的更新时间插值，避免重复位置快照造成回跳。切歌时先清除旧歌词，再等待新歌取词；旧请求不能覆盖后续曲目或重新配置的歌词。手动 LRC 模式也跟随播放器位置；没有媒体会话时层窗口用自己的时钟循环。节能：每个有视频的层窗口由一个常驻的 `bridge.ps1 -Command watch` 进程每秒检查该显示器的桌面是否被可见、未最小化、未 cloaked、非点击穿透的顶层窗口最大化或整幅覆盖（排除 Progman / WorkerW / 任务栏等外壳窗口），状态变化时输出一行 JSON；主进程结合 `powerMonitor` 的锁屏 / 电池 / 休眠事件由 `lib/power.js` 决定是否暂停，并调用层页面的 `window.__setPaused`。层页面只在视频出新帧时重绘（`requestVideoFrameCallback`），暂停时零重绘。逐帧人物提取：预览里的算法在 `live-person.js`（网页根目录，随 web 资源打包）里有一份独立实现供层窗口使用——每帧 384 px 分割、70/30 时域平滑、三张 alpha 图、以补全底图初始化并向无人区域学习的背景板；层窗口合成顺序为 静帧 → 分区视频 → 遮盖块 → 人物之下的视频层 → 移动副本 → 叠加 PNG → 人物之上的视频层。图层模块的视频层（最多 6 个）作为 `clips` 一起交给客户端：每个视频写成 `<key>-clip-<n>-<stamp>.<ext>`，层页面按方案在同一块画布上逐帧绘制——静帧壁纸、动态壁纸分块、人物之下的视频层、叠加 PNG、人物之上的视频层——变换、圆角、滤镜与混合模式与预览一致（混合模式以画布里的内容为底）。
 
 渲染分层由网页侧 `wallpaperCanvas(s,width,{layers})` 提供：`background`（壁纸 + 人物之下的模块）设为系统壁纸，`overlay`（透明：人物副本 + 人物之上的模块）给桌面层；两者叠加与导出 PNG 逐像素一致（`tools/verify-client.cjs` 校验）。没有任何悬浮内容时不创建桌面层。
 
@@ -61,6 +61,7 @@ npm run dist
 - 桌面层窗口是 Electron 透明窗口，`setIgnoreMouseEvents(true)`，不在任务栏与 Alt-Tab 出现；坐标按物理像素相对虚拟屏幕原点定位，多显示器、不同缩放比例都按 `IDesktopWallpaper` 返回的矩形处理。
 - 桌面层（静态叠加或动态视频）不随分辨率变化自动重算；重新点一次「应用」即可。视频按 `requestAnimationFrame` 逐帧画到 canvas，主进程加了 `disable-renderer-backgrounding`、`disable-background-timer-throttling` 与 `CalculateNativeWinOcclusion` 关闭，避免 Chromium 把图标后面的窗口当作被遮挡而停止绘制。视频文件写在 `%APPDATA%/desktop-rider-windows/desktop/`，每台显示器只保留最新一份。Explorer 重启（例如资源管理器崩溃）后宿主窗口失效，需要重新应用。
 - 系统壁纸由 Windows 自行持久化；客户端重启只恢复桌面层窗口（读取 `%APPDATA%/desktop-rider-windows/desktop/layers.json`）。
+- 断开的显示器暂不创建桌面层或萌版人物窗口，但其 `layers.json` / `mascots.json` 记录会保留；接回显示器并重启客户端后恢复。更新其他显示器不会覆盖离线记录。删除操作只移除指定显示器的记录；面板清理仍作用于当前枚举到的显示器，托盘隐藏仍作用于活动桌面层。
 - 不修改注册表以外的系统设置；开机启动使用 Electron 的登录项接口（`HKCU\...\Run`）。
 - `SetParent` 失败时桥脚本会带 Win32 错误码报错，而不是静默继续。以管理员身份运行并不影响：CI 任务本身就是高完整性进程（`elevated=True`，与资源管理器同一会话），桌面层照样挂到了 WorkerW / Progman 之下。
 
@@ -69,7 +70,7 @@ npm run dist
 运行器测不到的部分（托盘实际交互、登录时自动启动、锁屏 / 电池暂停、多显示器、性能）见 [REAL-DEVICE-TEST.md](REAL-DEVICE-TEST.md)，按编号在 Win11 真机上过一遍。
 
 ```bash
-npm test                # 单元测试（任何系统）
+npm test                # 单元测试、歌词同步和模拟多显示器恢复回归（任何系统）
 npm run smoke           # Electron 启动烟测、设置面板与托盘勾选同步（任何系统）
 node test/windows.cjs   # 仅 Windows：真调用桥、回查系统状态、截图
 ```
@@ -77,6 +78,16 @@ node test/windows.cjs   # 仅 Windows：真调用桥、回查系统状态、截�
 2026-11-04 修复托盘设置不同步：菜单原先只在启动或点击托盘选项时重建，面板经 IPC 修改设置后仍显示旧勾选。现在统一在 `setSettings()` 保存成功后刷新菜单。烟测通过真实面板、IPC 和 Electron 菜单验证「开机启动」「节能暂停」反复开关及两项互不覆盖，也检查托盘选项原有行为。测试使用独立临时数据目录，并替换系统登录项接口以避免修改当前用户的开机启动；真实托盘鼠标交互及注销后自启动仍按真机清单验证。
 
 本次已在 Windows 本机通过 15 项客户端单元测试及扩展后的 Electron 烟测；未重新运行完整桌面桥集成测试。
+
+2026-11-08 修复离线显示器恢复记录丢失：旧逻辑按活动窗口重写记录，副屏离线期间启动后，会丢掉副屏的桌面层和萌版人物；全部屏幕离线时还会清空桌面层记录。现在完整记录独立于活动窗口保存，启动恢复不回写临时状态，应用设计与人物拖动只更新目标显示器，明确删除时才移除该记录。保存使用不可变快照和按文件串行写入，恢复快照中已被删除或更新的项会跳过，避免旧操作覆盖新状态。
+
+`npm test` 已包含 `test/restore.test.cjs` 的 10 项回归：双屏/单屏/全离线及重连、主屏更新与人物拖动保留副屏、在线和离线记录的明确删除、旧保存与恢复期间删除的竞争。在 Windows 上 25 项测试与 Electron 烟测通过；另用真实 Electron 主进程、窗口和文件读写，模拟显示器枚举与原生挂接，完成五阶段断连/重连验证。实体拔插、真实桌面挂接及不同分辨率/缩放的多屏表现仍需真机验证。旧版本已经丢失的记录无法由本次修复自动找回，需要重新应用对应设计。
+
+2026-11-08 修复真实播放器的桌面歌词同步：QQ音乐 22.13 曾在进度正常前进时一直报告 `Changing`，原先因此不显示歌词。现在仅对 QQ音乐且曲目、时长、位置有效，控制信息明确为「可以暂停、不能播放」时推断播放，保留原始状态和 `playingInferred` 诊断；其他播放器和空闲状态不套用此兼容规则。媒体桥复用会话管理器并每 250ms 检查状态，保留 UTF-8 BOM；传输按 UTF-8 流解码，避免中文曲名跨数据块损坏。
+
+换曲或退出会立即清除旧歌词、逐字元素及索引；异步取词结果同时校验曲目、来源和请求身份，防止快速来回切歌或重新配置后被旧请求覆盖。播放时以有效的系统时间戳补偿延迟，重复快照保持同一时间基准；暂停不补偿，沿用旧快照恢复时从恢复时刻开始，换曲清除旧基准。手动歌词在无媒体会话时仍自行循环。
+
+新增 `test/media.test.cjs` 和 `test/lyrics-sync.test.cjs`，覆盖异常状态边界、中文流解码、真实控制器与共享渲染器、旧请求竞争、换曲清空、暂停和时间戳边界；当前共 44 项测试及 Electron 烟测通过。真实 QQ音乐的复测与测量边界见 [真机清单第 7 节](REAL-DEVICE-TEST.md#7-桌面歌词运行器没有播放器跟随播放只能真机测)。在线取词耗时与已有歌词的状态/位置响应分别记录，不能承诺网络请求必在 1 秒内完成。
 
 仓库根目录另有 `node tools/verify-client.cjs`，用假的 `window.desktopRider` 在普通 Chromium 中验证网页侧模块与分层渲染。
 
