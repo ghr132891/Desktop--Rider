@@ -12,17 +12,31 @@ window.__mascot={ready:false,events:0,last:null,hover:false,state:()=>null};
 if(cfg&&cfg.rig&&q.get('lib')){
  if(q.get('css')){const link=document.createElement('link');link.rel='stylesheet';link.href=q.get('css');document.head.append(link);}
  const script=document.createElement('script');script.src=q.get('lib');
- script.onload=()=>{const view=window.MascotView.create(root);const st={...cfg.style,left:'50%',top:'100%',interactive:true,externalDrag:true};view.setStyle(st);view.setRig(cfg.rig);
+ script.onload=()=>{const view=window.MascotView.create(root);let physicalSize=cfg.style.size;
+  // Exports store physical pixels, while the renderer's CSS pixels use the window's current DPI.
+  // Re-evaluate on resize as moving between displays can also change devicePixelRatio.
+  const sizeInDip=()=>physicalSize/(window.devicePixelRatio||1);
+  const st={...cfg.style,size:sizeInDip(),left:'50%',top:'100%',interactive:true,externalDrag:true};view.setStyle(st);view.setRig(cfg.rig);
+  window.addEventListener('resize',()=>view.setStyle({size:sizeInDip()}));
   if(cfg.phrases)view.command({type:'phrases',phrases:cfg.phrases});
   const bridge=window.mascotBridge;window.__mascot.ready=true;window.__mascot.state=()=>view.state();window.__mascot.command=cmd=>view.command(cmd);
   view.on(ev=>{window.__mascot.events++;window.__mascot.last=ev;bridge?.event(ev);});
-  bridge?.onCommand(cmd=>{const r=view.command(cmd);return r;});
+  bridge?.onCommand(cmd=>{if(cmd?.type==='style'&&Number.isFinite(cmd.patch?.size)){physicalSize=cmd.patch.size;cmd={...cmd,patch:{...cmd.patch,size:sizeInDip()}};}const r=view.command(cmd);return r;});
   bridge?.onMusic(m=>view.setMusic(m));
   bridge?.onPaused(p=>{if(p){view.setMusic({playing:false});}});
   // Hit test: the pointer counts as "on the character" over the head / body boxes or the speech bubble.
-  let hover=null;const over=(x,y)=>{for(const sel of ['.m-headwrap','.m-body','.m-bubble']){const el=root.querySelector(sel);if(!el||el.hidden)continue;const r=el.getBoundingClientRect();if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return true;}return false;};
-  window.addEventListener('mousemove',e=>{const h=over(e.clientX,e.clientY);if(h!==hover){hover=h;window.__mascot.hover=h;bridge?.hover(h);}});
-  window.addEventListener('mouseleave',()=>{if(hover!==false){hover=false;window.__mascot.hover=false;bridge?.hover(false);}});};
+  let hover=null,held=null;const over=(x,y)=>{for(const sel of ['.m-headwrap','.m-body','.m-bubble']){const el=root.querySelector(sel);if(!el||el.hidden)continue;const r=el.getBoundingClientRect();if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return true;}return false;};
+  const setHover=h=>{if(h!==hover){hover=h;window.__mascot.hover=h;bridge?.hover(h);}};
+  // A fast drag can temporarily leave the animated head/body. Turning on click-through then
+  // loses the release event, so keep the window interactive until pointer capture ends.
+  // Capture the OS cursor origin before the shared view emits drag. The host owns movement:
+  // renderer screen coordinates can shift during Windows DPI changes and are not authoritative.
+  window.addEventListener('pointerdown',e=>{if(e.button===0&&root.contains(e.target)){held=e.pointerId;bridge?.event({type:'drag-origin'});setHover(true);}},true);
+  window.addEventListener('mousemove',e=>setHover(held!==null||over(e.clientX,e.clientY)));
+  window.addEventListener('mouseleave',()=>{if(held===null)setHover(false);});
+  // Bubbling release runs after the shared view's drop, so saving precedes origin cleanup.
+  const released=e=>{if(held!==e.pointerId)return;held=null;bridge?.event({type:'drag-end'});setHover(over(e.clientX,e.clientY));};
+  window.addEventListener('pointerup',released);window.addEventListener('pointercancel',released);window.addEventListener('lostpointercapture',released);};
  document.head.append(script);
 }
 </script></body></html>

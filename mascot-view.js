@@ -110,20 +110,22 @@
   const onHead=e=>{const r=headWrap.getBoundingClientRect();return e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;};
   let press=null,pressTimer=0;
   root.addEventListener('pointerdown',e=>{if(!view.style.interactive||e.button!==0)return;e.preventDefault();root.setPointerCapture(e.pointerId);view.lastActive=nowS();if(view.asleep)view.wake();
-   press={id:e.pointerId,x:e.clientX,y:e.clientY,head:onHead(e),moved:false,t:nowS()};clearTimeout(pressTimer);
+   // The desktop host moves the entire window. clientX/Y then move underneath the pointer,
+   // so an external drag needs screen coordinates; the web preview still uses local coordinates.
+   const external=!!view.style.externalDrag;press={id:e.pointerId,x:external?e.screenX:e.clientX,y:external?e.screenY:e.clientY,external,head:onHead(e),moved:false,t:nowS()};clearTimeout(pressTimer);
    pressTimer=setTimeout(()=>{if(press&&!press.moved&&press.head){press.pat=true;view.doEmote('love');emit({type:'pat'});}},550);});
   root.addEventListener('pointermove',e=>{if(view.style.interactive){const r=headWrap.getBoundingClientRect();if(r.width){view.look.x=clamp((e.clientX-(r.left+r.width/2))/r.width,-1,1);view.look.y=clamp((e.clientY-(r.top+r.height/2))/r.height,-1,1);view.lookUntil=nowS()+1.5;}}
-   if(press?.id!==e.pointerId)return;const dx=e.clientX-press.x,dy=e.clientY-press.y;if(!press.moved&&Math.hypot(dx,dy)<6)return;
+   if(press?.id!==e.pointerId)return;const dx=(press.external?e.screenX:e.clientX)-press.x,dy=(press.external?e.screenY:e.clientY)-press.y;if(!press.moved&&Math.hypot(dx,dy)<6)return;
    if(!press.moved){press.moved=true;clearTimeout(pressTimer);view.drag={x0:press.x,y0:press.y,sx:0,sy:0,vx:0};root.dataset.emote='carried';view.say(phrase('drag'),1500);emit({type:'drag'});}
    const now=nowS();view.drag.vx=lerp(view.drag.vx,(dx-view.drag.sx)/Math.max(.016,now-(view.drag.t||now)),.4);view.drag.t=now;view.drag.sx=dx;view.drag.sy=dy;emit({type:'dragging',dx,dy});});
   const release=e=>{if(press?.id!==e.pointerId)return;clearTimeout(pressTimer);const p=press;press=null;
    if(view.drag){const d=view.drag;view.drag=null;delete root.dataset.emote;emit({type:'drop',dx:d.sx,dy:d.sy});if(Math.abs(d.vx)>900)view.doEmote('dizzy');else view.say(phrase('drop'),1200);return;}
-   if(p.pat)return;const t=nowS();view.taps=view.taps.filter(x=>t-x<1.6);view.taps.push(t);
+   if(p.pat||e.type!=='pointerup')return;const t=nowS();view.taps=view.taps.filter(x=>t-x<1.6);view.taps.push(t);
    if(view.taps.length>=4){view.taps=[];view.setMood({happy:view.mood.happy-.25});view.doEmote('angry');emit({type:'angry'});return;}
    view.setMood({happy:view.mood.happy+.08});view.doEmote(p.head?'happy':'surprise');emit({type:'tap',head:p.head});
    // Two taps and then quiet = a double tap (cheer); more taps keep counting towards angry.
    if(view.taps.length===2&&t-view.taps[0]<.4)setTimeout(()=>{if(view.taps.length===2&&nowS()-view.taps[1]>=.35){view.taps=[];view.doEmote('cheer');emit({type:'doubletap'});}},380);};
-  root.addEventListener('pointerup',release);root.addEventListener('pointercancel',release);
+  root.addEventListener('pointerup',release);root.addEventListener('pointercancel',release);root.addEventListener('lostpointercapture',release);
   // ---- animation loop ----
   const tick=()=>{view.raf=requestAnimationFrame(tick);if(!view.rig||root.hidden)return;const t=nowS()-view.t0,now=nowS(),st=view.style,k=st.size/view.rig.height,mood=view.mood,music=view.music;
    if(view.emote&&now>view.emote.until&&view.emote.name!=='sleep'){view.emote=null;delete root.dataset.emote;}

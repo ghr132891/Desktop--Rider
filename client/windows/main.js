@@ -36,6 +36,11 @@ const fileUrl=p=>require('node:url').pathToFileURL(p).href;
 const {checkLive,checkClips,checkLyrics,checkMascot}=require('./lib/live');
 const LyricsView=require(path.join(WEB_ROOT,'lyrics-view.js')),Lyrics=require('./lib/lyrics').use(LyricsView); // shared parser/renderer from the web root
 const {decide:decidePower}=require('./lib/power');
+const {monitorGeometry,mascotBounds,mascotStyleFromBounds,moveMascotWindow}=require('./lib/display-geometry');
+// Applying, deleting and rebuilding windows share one queue: a slow native attach must not
+// finish after a newer display change or revive a design the user just removed.
+let desktopQueue=Promise.resolve(),displayTimer=null;
+function desktopTask(run){const next=desktopQueue.then(run);desktopQueue=next.catch(()=>{});return next;}
 
 if(!app.requestSingleInstanceLock()){app.quit();}
 else{
@@ -44,10 +49,10 @@ else{
   web=await server.start(WEB_ROOT,{api:mascotApi,routes:{'/client/':__dirname,'/data/':DATA}}); // layer.html + its media are served same-origin with the web app
   await writeJson(MASCOT_API,{url:web.url.replace(/\/$/,''),token:mascotToken}).catch(()=>{});
   createMain();createTray();applyLoginItem();watchPower();
-  await restoreLayers();await restoreMascots();
+  watchDisplays();await desktopTask(async()=>{await restoreLayers();await restoreMascots();});
  });
 }
-app.on('before-quit',()=>{quitting=true;});
+app.on('before-quit',()=>{quitting=true;clearTimeout(displayTimer);});
 app.on('window-all-closed',()=>{}); // tray keeps us alive
 
 function createMain(){
@@ -67,7 +72,7 @@ function updateTrayMenu(){
  if(!tray||tray.isDestroyed())return;
  tray.setContextMenu(Menu.buildFromTemplate([
   {label:'打开 Desktop Rider',click:showMain},
-  {label:'隐藏桌面层',click:async()=>{for(const id of [...layers.keys()])await clearLayer(id);}},
+  {label:'隐藏桌面层',click:()=>desktopTask(async()=>{for(const id of [...layers.keys()])await clearLayer(id);})},
   {type:'separator'},
   {label:'开机启动',type:'checkbox',checked:settings.openAtLogin,click:item=>setSettings({openAtLogin:item.checked})},
   {label:'节能：桌面被遮住或用电池时暂停视频',type:'checkbox',checked:settings.powerSave!==false,click:item=>setSettings({powerSave:item.checked})},
@@ -123,25 +128,33 @@ async function fetchLyrics(entry,key,want,provider){const st=entry.lyricsState,s
 // window, the hit-test toggling, dragging the window, the music feed from the lyrics clock and the external-AI HTTP API.
 const mascots=new Map(); // monitorId -> {window,cfg,monitor,hover,dragStart,pending:Map,nextId}
 const mascotToken=crypto.randomBytes(18).toString('base64url');const sseClients=new Set();
-function mascotBounds(monitor,style){const size=style.size,w=Math.max(360,Math.round(size*2.2)),h=Math.round(size*1.75);return {x:Math.round(monitor.left+parseFloat(style.left)-w/2),y:Math.round(monitor.top+parseFloat(style.top)-h),width:w,height:h};}
-async function showMascot(monitorId,monitor,cfg,persist=true){let m=mascots.get(monitorId);
- if(!m||m.window.isDestroyed()){const win=new BrowserWindow({...mascotBounds(monitor,cfg.style),frame:false,transparent:true,hasShadow:false,resizable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,alwaysOnTop:cfg.style.onTop!==false,title:'Desktop Rider Mascot',
+async function showMascot(monitorId,monitor,cfg,persist=true){const geometry=monitorGeometry(monitor,screen),key=geometryKey(monitor,geometry);let m=mascots.get(monitorId);
+ if(m&&m.geometryKey!==key){closeMascotWindow(monitorId);m=null;}
+ if(!m||m.window.isDestroyed()){const win=new BrowserWindow({...mascotBounds(monitor,cfg.style,geometry),frame:false,transparent:true,hasShadow:false,resizable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,alwaysOnTop:cfg.style.onTop!==false,title:'Desktop Rider Mascot',
    webPreferences:{preload:path.join(__dirname,'preload-mascot.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
   win.setMenuBarVisibility(false);win.setIgnoreMouseEvents(true,{forward:true});m={window:win,cfg,monitor,hover:false,dragStart:null,pending:new Map(),nextId:0};mascots.set(monitorId,m);
   win.on('closed',()=>{if(mascots.get(monitorId)===m)mascots.delete(monitorId);});}
- m.cfg=cfg;m.monitor=monitor;m.window.setBounds(mascotBounds(monitor,cfg.style));m.window.setAlwaysOnTop(cfg.style.onTop!==false,'screen-saver');
+ m.cfg=cfg;m.monitor=monitor;m.geometry=geometry;m.geometryKey=key;m.bounds=mascotBounds(monitor,cfg.style,geometry);m.window.setBounds(m.bounds);m.window.setAlwaysOnTop(cfg.style.onTop!==false,'screen-saver');
  const url=fileUrl(path.join(__dirname,'mascot.html'))+'?cfg='+encodeURIComponent(JSON.stringify(cfg))+'&lib='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'mascot-view.js')))+'&css='+encodeURIComponent(fileUrl(path.join(WEB_ROOT,'mascot-view.css')));
- await m.window.loadURL(url);m.window.showInactive();if(persist)await saveMascots(monitorId);}
-async function closeMascot(monitorId){const m=mascots.get(monitorId),saved=mascotRecords.delete(monitorId);if(!m&&!saved)return;mascots.delete(monitorId);if(m&&!m.window.isDestroyed())m.window.destroy();await saveMascots();}
+ try{await m.window.loadURL(url);m.window.showInactive();if(persist)await saveMascots(monitorId);}
+ catch(error){closeMascotWindow(monitorId);throw error;}}
+function closeMascotWindow(monitorId){const m=mascots.get(monitorId);mascots.delete(monitorId);if(!m)return;
+ for(const resolve of m.pending.values())resolve({ok:false,error:'window closed'});m.pending.clear();
+ if(!m.window.isDestroyed())m.window.destroy();}
+async function closeMascot(monitorId){mascotRecords.delete(monitorId);closeMascotWindow(monitorId);await saveMascots();}
 const saveMascots=monitorId=>{const m=mascots.get(monitorId);return mascotRecords.save(m?{monitorId,cfg:m.cfg}:null);};
 async function restoreMascots(){const saved=mascotRecords.list();if(!saved.length)return;let list=[];try{list=await monitors();}catch{return;}
  for(const item of saved){if(mascotRecords.get(item.monitorId)!==item)continue;const monitor=list.find(x=>x.id===item.monitorId);let cfg=null;try{cfg=checkMascot(item.cfg);}catch{}if(!monitor||!cfg)continue;try{await showMascot(item.monitorId,monitor,cfg,false);}catch(error){console.error('restore mascot',error);}}}
 const mascotOf=sender=>[...mascots.values()].find(m=>!m.window.isDestroyed()&&m.window.webContents===sender)||null;
-ipcMain.on('mascot:hover',(e,over)=>{const m=mascotOf(e.sender);if(!m)return;m.hover=!!over;m.window.setIgnoreMouseEvents(!over,{forward:true});});
+ipcMain.on('mascot:hover',(e,over)=>{const m=mascotOf(e.sender);if(!m)return;m.hover=!!over||!!m.dragStart;m.window.setIgnoreMouseEvents(!m.hover,{forward:true});});
 ipcMain.on('mascot:event',(e,ev)=>{const m=mascotOf(e.sender);if(!m||!ev||typeof ev!=='object')return;
- if(ev.type==='drag')m.dragStart=m.window.getBounds();
- else if(ev.type==='dragging'&&m.dragStart){m.window.setPosition(Math.round(m.dragStart.x+(Number(ev.dx)||0)),Math.round(m.dragStart.y+(Number(ev.dy)||0)));}
- else if(ev.type==='drop'){m.dragStart=null;const b=m.window.getBounds();m.cfg.style.left=(b.x+b.width/2-m.monitor.left)+'px';m.cfg.style.top=(b.y+b.height-m.monitor.top)+'px';saveMascots(m.monitor.id);}
+ // Renderer screen/client coordinates can shift as a native window crosses DPI boundaries.
+ // Use one absolute OS cursor coordinate space for the entire press, including stationary moves.
+ if(ev.type==='drag-origin'){m.dragOrigin={bounds:{...m.bounds},point:screen.getCursorScreenPoint()};return;}
+ if(ev.type==='drag-end'){m.dragOrigin=null;m.dragStart=null;return;}
+ if(ev.type==='drag')m.dragStart=m.dragOrigin||{bounds:{...m.bounds},point:screen.getCursorScreenPoint()};
+ else if(ev.type==='dragging'&&m.dragStart)moveMascotWindow(m,screen.getCursorScreenPoint());
+ else if(ev.type==='drop'){m.dragStart=null;m.dragOrigin=null;Object.assign(m.cfg.style,mascotStyleFromBounds(m.monitor,m.bounds,m.geometry));saveMascots(m.monitor.id);}
  broadcastMascot({...ev,monitorId:[...mascots].find(([,x])=>x===m)?.[0]});});
 ipcMain.on('mascot:result',(e,id,result)=>{const m=mascotOf(e.sender);const p=m?.pending.get(id);if(p){m.pending.delete(id);p(result);}});
 function mascotCommand(cmd){return Promise.all([...mascots.values()].filter(m=>!m.window.isDestroyed()).map(m=>new Promise(resolve=>{const id=++m.nextId;const timer=setTimeout(()=>{m.pending.delete(id);resolve({ok:false,error:'timeout'});},3000);m.pending.set(id,r=>{clearTimeout(timer);resolve(r);});m.window.webContents.send('mascot:command',cmd,id);})));}
@@ -175,6 +188,40 @@ async function monitors(){
  if(process.platform==='win32')return native.monitors();
  return screen.getAllDisplays().map((d,i)=>({id:'electron:'+d.id,index:i,left:Math.round(d.bounds.x*d.scaleFactor),top:Math.round(d.bounds.y*d.scaleFactor),width:Math.round(d.bounds.width*d.scaleFactor),height:Math.round(d.bounds.height*d.scaleFactor),primary:d.id===screen.getPrimaryDisplay().id}));
 }
+const geometryKey=(monitor,geometry)=>JSON.stringify([monitor.left,monitor.top,monitor.width,monitor.height,geometry.bounds,geometry.scaleFactor]);
+function watchDisplays(){
+ let generation=0;
+ const enqueue=(version,attempt,delay)=>{clearTimeout(displayTimer);displayTimer=setTimeout(()=>{
+  displayTimer=null;desktopTask(reconcileDisplays).catch(error=>{
+   if(quitting||version!==generation)return;
+   // Display notifications can arrive before Explorer/native enumeration settles. Retry a
+   // bounded number of times, and leave saved designs intact if the system stays unavailable.
+   if(attempt<2)enqueue(version,attempt+1,1000);
+   else{console.error('display change',error);status('更新显示器布局失败：'+error.message);}
+  });
+ },delay);};
+ const schedule=()=>{if(!quitting)enqueue(++generation,0,300);};
+ for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on(event,schedule);
+}
+async function reconcileDisplays(){
+ if(quitting)return;
+ // Enumerate first: a bridge failure is not evidence that every display was unplugged.
+ const list=await monitors(),online=new Map(list.map(m=>[m.id,m]));
+ const keys=new Map(list.map(m=>[m.id,geometryKey(m,monitorGeometry(m,screen))]));
+ const changed=(id,entry)=>!online.has(id)||entry.geometryKey!==keys.get(id);
+ // Windows can migrate a disconnected top-level window to another screen and leave a
+ // parented Chromium surface at its old DPI. Recreate changed windows on the right display.
+ for(const [id,entry] of [...layers])if(changed(id,entry))await closeLayerWindow(id);
+ for(const [id,entry] of [...mascots])if(changed(id,entry))closeMascotWindow(id);
+ const failures=[];
+ for(const item of layerRecords.list())if(!layers.has(item.monitorId)&&online.has(item.monitorId)){
+  try{await restoreLayer(item,online.get(item.monitorId));}catch(error){failures.push(error);}
+ }
+ for(const item of mascotRecords.list())if(!mascots.has(item.monitorId)&&online.has(item.monitorId)){
+  try{const cfg=checkMascot(item.cfg);if(cfg)await showMascot(item.monitorId,online.get(item.monitorId),cfg,false);}catch(error){failures.push(error);}
+ }
+ if(failures.length)throw failures[0];
+}
 // background: PNG for the system wallpaper (also the still fallback under a live layer);
 // overlay: transparent PNG for the layer window; live: {name,type,bytes,plan} video that the layer plays;
 // clips: video layers from modules/layers.js, each {name,type,bytes,x,y,w,h,rotate,flipX,opacity,blur,hue,saturate,brightness,radius,blend,fit,above}.
@@ -205,16 +252,18 @@ async function apply({monitorId,background,overlay,live,clips,lyrics,mascot}={})
 // content = {overlay: PNG path | null, live: {video, plan, still} | null, clips: [{video,…look}], still}; layer.html paints the video
 // pieces and the clips below the person, then the overlay, then the clips above it — all on one canvas when any video plays.
 async function showLayer(monitorId,monitor,content,stamp){
+ const geometry=monitorGeometry(monitor,screen),key=geometryKey(monitor,geometry);
  let entry=layers.get(monitorId);
+ if(entry&&entry.geometryKey!==key){await closeLayerWindow(monitorId);entry=null;}
  if(!entry||entry.window.isDestroyed()){
   // Not resizable:false — Electron would pin the maximum size to the work area (monitor minus taskbar) and the bridge's SetWindowPos could never reach the full monitor height.
-  const win=new BrowserWindow({x:0,y:0,width:monitor.width,height:monitor.height,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
+  const win=new BrowserWindow({...geometry.bounds,frame:false,transparent:true,hasShadow:false,movable:false,minimizable:false,maximizable:false,skipTaskbar:true,focusable:false,show:false,title:'Desktop Rider Layer',
    webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
   win.setIgnoreMouseEvents(true);win.setMenuBarVisibility(false);
   entry={window:win,overlay:null,live:null,clips:[],still:null,lyrics:null,lyricsState:null,paused:false,pauseReason:'',covered:false,watcher:null,rect:{left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height},attached:false};layers.set(monitorId,entry);
   win.on('closed',()=>{entry.watcher?.stop();entry.watcher=null;if(layers.get(monitorId)===entry)layers.delete(monitorId);});
  }
- entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.lyrics=content.lyrics||null;entry.lyricsState=null;entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
+ entry.geometryKey=key;entry.overlay=content.overlay||null;entry.live=content.live||null;entry.clips=Array.isArray(content.clips)?content.clips:[];entry.lyrics=content.lyrics||null;entry.lyricsState=null;entry.still=content.still||content.live?.still||null;entry.rect={left:monitor.left,top:monitor.top,width:monitor.width,height:monitor.height};
  // Everything the page loads comes from the loopback server: the page under /client/, written files under /data/, renderers at the web root.
  const dataUrl=p=>web.url+'data/'+encodeURIComponent(path.basename(p));
  let url=web.url+'client/layer.html?v='+stamp+'&web='+encodeURIComponent(web.url);
@@ -222,17 +271,18 @@ async function showLayer(monitorId,monitor,content,stamp){
  if(entry.live)url+='&live='+encodeURIComponent(JSON.stringify({video:dataUrl(entry.live.video),still:entry.live.still?dataUrl(entry.live.still):null,plan:entry.live.plan,person:entry.live.person?{...entry.live.person,plate:entry.live.plate?dataUrl(entry.live.plate):null}:null}));
  if(entry.clips.length)url+='&clips='+encodeURIComponent(JSON.stringify({width:monitor.width,height:monitor.height,still:entry.still?dataUrl(entry.still):null,items:entry.clips.map(c=>({...c,video:dataUrl(c.video)}))}));
  if(entry.lyrics)url+='&lyrics='+encodeURIComponent(JSON.stringify({mode:entry.lyrics.source.mode,style:entry.lyrics.style,lines:entry.lyrics.source.mode==='manual'?LyricsView.parse(entry.lyrics.source.lrc):[]}))+'&lib='+encodeURIComponent(web.url+'lyrics-view.js')+'&css='+encodeURIComponent(web.url+'lyrics-view.css');
- await entry.window.loadURL(url);entry.window.showInactive();
+ try{await entry.window.loadURL(url);entry.window.showInactive();
  if(process.platform==='win32'){const result=await native.attachLayer(hwndOf(entry.window.getNativeWindowHandle()),entry.rect);entry.attached=true;entry.host=result.host;}
  else{entry.window.setBounds(screen.getAllDisplays()[monitor.index]?.bounds||{x:0,y:0,width:800,height:500});entry.window.setAlwaysOnTop(false);} // dev preview on other OSes: a plain window
  entry.paused=undefined;entry.pauseReason=undefined;watchEntry(entry); // a fresh page starts playing: re-evaluate and resend the decision
- lyricsEntry(entry);
+ lyricsEntry(entry);}
+ catch(error){await closeLayerWindow(monitorId);throw error;}
 }
-async function clearLayer(monitorId){const entry=layers.get(monitorId),saved=layerRecords.delete(monitorId);if(!entry&&!saved)return;layers.delete(monitorId);
+async function closeLayerWindow(monitorId){const entry=layers.get(monitorId);layers.delete(monitorId);
  if(entry){entry.watcher?.stop();entry.watcher=null;mediaWatchSync();
   if(process.platform==='win32'&&entry.attached&&!entry.window.isDestroyed()){try{await native.detachLayer(hwndOf(entry.window.getNativeWindowHandle()));}catch{}}
-  if(!entry.window.isDestroyed())entry.window.destroy();}
- await saveLayers();}
+  if(!entry.window.isDestroyed())entry.window.destroy();}}
+async function clearLayer(monitorId){layerRecords.delete(monitorId);await closeLayerWindow(monitorId);await saveLayers();}
 const saveLayers=monitorId=>{const e=layers.get(monitorId);return layerRecords.save(e?{monitorId,overlay:e.overlay,live:e.live,clips:e.clips,still:e.still,lyrics:e.lyrics,rect:e.rect}:null);};
 // Windows keeps the wallpaper itself; the layer windows are ours to bring back after a restart.
 async function restoreLayers(){
@@ -240,18 +290,22 @@ async function restoreLayers(){
  let list=[];try{list=await monitors();}catch{return;}
  for(const item of saved){
   if(layerRecords.get(item.monitorId)!==item)continue; // A pending restore must not undo an explicit edit/delete.
-  const monitor=list.find(m=>m.id===item.monitorId),overlay=item.overlay||item.file||null,live=item.live&&item.live.video&&item.live.plan?item.live:null; // `file` = pre-live layers.json
+  const monitor=list.find(m=>m.id===item.monitorId);if(!monitor)continue;
+  try{await restoreLayer(item,monitor);}catch(error){console.error('restore layer',error);}
+ }
+}
+async function restoreLayer(item,monitor){
+  const overlay=item.overlay||item.file||null,live=item.live&&item.live.video&&item.live.plan?item.live:null; // `file` = pre-live layers.json
   const clips=(Array.isArray(item.clips)?item.clips:[]).filter(c=>c&&typeof c.video==='string'&&fs.existsSync(c.video)),still=item.still&&fs.existsSync(item.still)?item.still:null;
   let lyrics=null;try{lyrics=checkLyrics(item.lyrics);}catch{}
-  if(!monitor||(overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live&&!clips.length&&!lyrics))continue;
-  try{await showLayer(item.monitorId,monitor,{overlay,live,clips,still,lyrics},Date.now());}catch(error){console.error('restore layer',error);}
- }
+  if((overlay&&!fs.existsSync(overlay))||(live&&!fs.existsSync(live.video))||(!overlay&&!live&&!clips.length&&!lyrics))return;
+  await showLayer(item.monitorId,monitor,{overlay,live,clips,still,lyrics},Date.now());
 }
 
 ipcMain.on('client:version',e=>{e.returnValue=app.getVersion();});
 ipcMain.handle('client:monitors',()=>monitors());
-ipcMain.handle('client:apply',(e,request)=>apply(request));
-ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return clearLayer(monitorId);});
+ipcMain.handle('client:apply',(e,request)=>desktopTask(()=>apply(request)));
+ipcMain.handle('client:clear-layer',(e,monitorId)=>{if(typeof monitorId!=='string')throw new Error('缺少显示器');return desktopTask(()=>clearLayer(monitorId));});
 // One entry per live layer window; hwnd lets test/windows.cjs ask Win32 where the window ended up.
 ipcMain.handle('client:layers',()=>[...layers].map(([monitorId,e])=>({monitorId,host:e.host||null,attached:!!e.attached,rect:e.rect,overlay:e.overlay,live:!!e.live,person:!!e.live?.person,clips:e.clips?e.clips.length:0,video:hasVideo(e),paused:!!e.paused,pauseReason:e.pauseReason||'',covering:e.covering||null,lyrics:e.lyrics?{mode:e.lyrics.source.mode,provider:e.lyrics.source.provider,...(e.lyricsState||{track:null,playing:false,lines:e.lyrics.source.mode==='manual'?LyricsView.parse(e.lyrics.source.lrc).length:0,source:'',words:false,error:''})}:null,hwnd:process.platform==='win32'&&!e.window.isDestroyed()?hwndOf(e.window.getNativeWindowHandle()):null})));
 ipcMain.handle('client:mascots',()=>[...mascots].map(([monitorId,m])=>({monitorId,hwnd:process.platform==='win32'&&!m.window.isDestroyed()?hwndOf(m.window.getNativeWindowHandle()):null,bounds:m.window.isDestroyed()?null:m.window.getBounds(),onTop:!!m.cfg.style.onTop,hover:!!m.hover})));

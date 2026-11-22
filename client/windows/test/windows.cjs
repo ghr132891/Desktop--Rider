@@ -10,11 +10,12 @@
 const {_electron:electron}=require('playwright-core');
 const assert=require('node:assert/strict'),path=require('node:path'),os=require('node:os'),fs=require('node:fs'),{execFile}=require('node:child_process');
 const native=require('../lib/native'),bridge=native.create();
+const {recordVideoFixture}=require('./video-fixture.cjs');
 const OUT=process.env.DESKTOP_RIDER_OUT||path.join(__dirname,'out');fs.mkdirSync(OUT,{recursive:true});
 const report={platform:process.platform,release:os.release(),startedAt:new Date().toISOString(),steps:[]};
 const log=(step,data)=>{report.steps.push({step,...(data||{})});console.log('·',step,data?JSON.stringify(data):'');};
 const ps=(file,list)=>new Promise((resolve,reject)=>execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file,...list],{windowsHide:true,timeout:60000},(error,stdout,stderr)=>error?reject(new Error(String(stderr||error.message).trim())):resolve(stdout)));
-const screenshot=name=>ps(path.join(__dirname,'screenshot.ps1'),['-Path',path.join(OUT,name)]).then(out=>log('screenshot',{name,...JSON.parse(out)})).catch(error=>log('screenshot failed',{name,error:error.message}));
+const screenshot=name=>ps(path.join(__dirname,'screenshot.ps1'),['-Path',path.join(OUT,name)]).then(out=>{const capture=JSON.parse(out);log('screenshot',{name,...capture});return capture;}).catch(error=>{log('screenshot failed',{name,error:error.message});return null;});
 const pngSize=file=>{const b=fs.readFileSync(file);assert.equal(b.toString('latin1',1,4),'PNG',file+' is a PNG');return {width:b.readUInt32BE(16),height:b.readUInt32BE(20)};};
 const realLower=p=>fs.realpathSync.native(p).toLowerCase();
 // The main window is the loopback page that is not the layer (/client/layer.html is served from the same origin now).
@@ -23,7 +24,9 @@ const mainWindows=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);r
 const hideMain=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);for(const w of BrowserWindow.getAllWindows())if(isMain(w.webContents.getURL()))w.hide();},isMainUrl);
 const showMain=app=>app.evaluate(({BrowserWindow},f)=>{const isMain=eval(f);for(const w of BrowserWindow.getAllWindows())if(isMain(w.webContents.getURL()))w.show();},isMainUrl);
 async function launch(userData){
- const app=await electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'..'),'--user-data-dir='+userData],env:{...process.env,ELECTRON_ENABLE_LOGGING:'0'}});
+ // A temporary profile does not isolate OS login settings. Reuse the real-app test entry
+ // that observes tray updates and intercepts login-item writes; all desktop/native calls stay real.
+ const app=await electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'smoke-main.cjs'),'--user-data-dir='+userData],env:{...process.env,ELECTRON_ENABLE_LOGGING:'0'}});
  const page=await app.firstWindow();await page.waitForLoadState('domcontentloaded');
  // The default 1440×960 main window would hide the whole 1024×768 runner desktop — and the power policy would then
  // rightly pause the layer videos. Keep it a normal window that leaves desktop visible.
@@ -32,6 +35,8 @@ async function launch(userData){
  return {app,page};
 }
 const rectOf=o=>({left:o.left,top:o.top,width:o.width,height:o.height});
+// Visibility + matching bounds still pass when 24H2 puts the layer BELOW its wallpaper child.
+const assertDesktopOrder=info=>{assert.equal(info.childWindow,true,'the desktop layer has the child window style');assert.equal(info.layeredWindow,true,'the desktop layer retains per-pixel transparency');assert.equal(info.effectiveAlpha,255,'the reparented desktop layer has its global opacity initialised');assert.notEqual(info.belowIcons,false,'desktop icons stay above the layer');assert.notEqual(info.aboveWallpaper,false,'the layer stays above the system wallpaper');};
 // The layer window is a BrowserWindow too, so Playwright can ask layer.html whether the video paints.
 async function untilPlaying(app,timeout=30000){const t0=Date.now();let last={frames:0,paused:true};while(Date.now()-t0<timeout){const win=app.windows().find(w=>w.url().includes('layer.html'));if(win){last=await win.evaluate(()=>({frames:window.__frames,paused:!window.__video||window.__video.paused,readyState:window.__video?.readyState,error:window.__video?.error?.code||null})).catch(()=>last);if(last.frames>5&&!last.paused)return last;}await new Promise(r=>setTimeout(r,500));}return last;}
 // Poll from Node: restoreLayers() runs after the page is up (bridge compile + monitors + attach), and
@@ -51,7 +56,7 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   ({app,page}=await launch(userData));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   // Floating person (auto cutout of the built-in portrait) plus desktop text → the overlay has content.
-  await page.evaluate(()=>{state={...clone(defaults),wallpaper:'portrait',mode:'vertical',ratio:50,gap:20};state.modules.note.text='Desktop Rider CI';update({zones:true});});
+  await page.evaluate(()=>{state={...clone(defaults),wallpaper:'portrait',mode:'vertical',ratio:50,gap:20};Object.assign(state.modules.note,{text:'Desktop Rider CI',x:50,y:35,size:5,color:'#ff00ff',shadow:false});update({zones:true});});
   await page.locator('#float-toggle').check();
   await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:180000});log('person cut out');
   await page.locator('[data-view="client"]').click();await page.waitForFunction(()=>document.querySelectorAll('.client-monitor').length>0);
@@ -80,9 +85,22 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.equal(layer.monitorId,primary.id);assert.ok(['workerw','progman'].includes(layer.host),'host is workerw or progman: '+layer.host);assert.ok(Number.isInteger(layer.hwnd)&&layer.hwnd>0);
   const info=await bridge.layerInfo(layer.hwnd);log('layer window',info);
   assert.equal(info.valid,true);assert.equal(info.parentClass,layer.host==='workerw'?'WorkerW':'Progman');assert.equal(info.visible,true);
+  assertDesktopOrder(info);
   assert.deepEqual(rectOf(info),rectOf(primary),'layer covers the monitor exactly');
   assert.equal((await mainWindows(app)).length,1);
-  await hideMain(app);await page.waitForTimeout(1500);await screenshot('2-applied.png');await showMain(app);
+  await hideMain(app);await page.waitForTimeout(1500);const desktopCapture=await screenshot('2-applied.png');
+  assert.ok(desktopCapture,'a real desktop capture is required for visual verification');
+  const desktopText=await app.evaluate(({nativeImage},{inspect,overlayFile,backgroundFile,monitor,capture})=>{
+   const read=file=>{const image=nativeImage.createFromPath(file);return {...image.getSize(),data:image.toBitmap()};};
+   // Evaluate our dependency-free sampler beside nativeImage to avoid transferring full
+   // monitor bitmaps through Playwright; Electron 28+ has no global require in this context.
+   return eval('('+inspect+')')({overlay:read(overlayFile),background:read(backgroundFile),desktop:read(capture.path),monitor,capture});
+  },{inspect:require('./desktop-pixels.cjs').inspectDesktopText.toString(),overlayFile,backgroundFile:current,monitor:primary,capture:desktopCapture});
+  log('desktop text pixels',desktopText);
+  assert.ok(desktopText.samples>=100,'the overlay contains enough opaque text pixels for a real visibility check');
+  assert.equal(desktopText.backgroundMatches,0,'the text marker is absent from the system wallpaper, so a hidden overlay cannot pass');
+  assert.ok(desktopText.ratio>=.8,'desktop text is not visibly composited at its expected position (or another window covers the test area): '+JSON.stringify(desktopText));
+  await showMain(app);
   await page.screenshot({path:path.join(OUT,'2-client-view.png')});
   assert.deepEqual(errors,[],'no page errors');
 
@@ -112,13 +130,13 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   // 3c. A video layer (modules/layers.js) plays in the layer window with its own frame and look: a 2 s WebM whose colour
   //     cycles becomes a layer above the person at a known spot (rotated, rounded); after applying, the layer window's
   //     canvas changes at the clip's centre between two reads while the wallpaper beside it stays put.
-  //     The clip is recorded from a canvas with captureStream(0) + requestFrame(): frames are pushed explicitly, so the file
-  //     decodes even when Chromium has stopped compositing the main window (hidden or fully occluded on a real PC — the
-  //     first real-machine run got an empty "视频无法解码" WebM from the automatic 30 fps capture).
+  //     Encoding runs in a separate software-rendered fixture host: this Windows GPU can
+  //     produce empty canvas recordings. The product keeps its normal GPU settings, and its
+  //     import, desktop decoding, frame changes, and pause/resume assertions below remain real.
   await showMain(app);await page.waitForFunction(()=>document.visibilityState==='visible',null,{timeout:10000}).catch(()=>{});
-  await page.evaluate(()=>new Promise((resolve,reject)=>{const c=document.createElement('canvas');c.width=160;c.height=160;const ctx=c.getContext('2d');const stream=c.captureStream(0),track=stream.getVideoTracks()[0];const rec=new MediaRecorder(stream,{mimeType:'video/webm'});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
-   rec.onstop=()=>{const file=new File(chunks,'cycle.webm',{type:'video/webm'});Rider.modules.find(m=>m.id==='layers').addVideo(file).then(resolve,error=>reject(new Error(`${error.message}; recorded bytes=${file.size}, visibility=${document.visibilityState}, codec=${rec.mimeType}`)));};
-   let t=0;const timer=setInterval(()=>{ctx.fillStyle=`hsl(${t*6},90%,50%)`;ctx.fillRect(0,0,160,160);track.requestFrame();if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();}));
+  const cycleFixture=await recordVideoFixture({kind:'cycle'});
+  log('video fixture recorded',{kind:'cycle',bytes:cycleFixture.bytes.length,codec:cycleFixture.mimeType,frames:cycleFixture.frames});
+  await page.evaluate(base64=>Rider.modules.find(m=>m.id==='layers').addVideo(new File([Uint8Array.from(atob(base64),c=>c.charCodeAt(0))],'cycle.webm',{type:'video/webm'})),cycleFixture.bytes.toString('base64'));
   await page.evaluate(()=>{const m=Rider.modules.find(x=>x.id==='layers'),it=m.me().items.at(-1);Object.assign(it,{x:75,y:25,w:20,h:24,above:true,rotate:15,radius:20,blend:'normal',opacity:100});m.changed();});
   await page.waitForFunction(()=>document.querySelectorAll('.layer-item video').length===1&&!document.querySelector('.layer-item video').paused,null,{timeout:30000});log('video layer added',{item:await page.evaluate(()=>({...state.modules.layers.items.at(-1)}))});
   // Adding a layer switches the sidebar to the 图层 view; go back to the client view before applying.
@@ -156,9 +174,11 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   await page.waitForFunction(()=>/^(已应用到显示器 \d+（含桌面层）|应用失败：.*)$/.test(document.querySelector('#client-status').textContent),null,{timeout:180000});
   const lyricsStatus=await page.locator('#client-status').textContent();log('lyrics apply status',{status:lyricsStatus});assert.match(lyricsStatus,/（含桌面层）$/);
   const lyricsLayers=await page.evaluate(()=>desktopRider.layers());log('lyrics layers',{layers:lyricsLayers});assert.equal(lyricsLayers[0].lyrics?.mode,'manual');assert.equal(lyricsLayers[0].lyrics?.lines,3);
+  // Native attach can consume the first line before observation starts. Cover a full 7.5 s
+  // fixture cycle, rather than sampling only 6 s at an arbitrary phase. Stop once all assertions have evidence.
   await layerWin().waitForFunction(()=>window.__lyrics.ready);
   await layerWin().evaluate(()=>{window.__testSetMedia=window.__setMedia;window.__setMedia=()=>window.__testSetMedia(null);window.__setMedia(null);});
-  await until(page,async()=>true,'noop',1000).catch(()=>{});const lyricSeen=new Set();let lyricStyle=null,wordFill=false;for(let i=0;i<20;i++){const r=await layerWin().evaluate(()=>{const b=document.getElementById('lyrics'),cs=getComputedStyle(b),ws=[...b.querySelectorAll('.lyrics-line.in .lw')].map(w=>Number(w.style.getPropertyValue('--p')));return {ready:window.__lyrics.ready,line:b.querySelector('.lyrics-line.in')?.textContent||'',hidden:b.hidden,fontSize:parseFloat(cs.fontSize),color:cs.color,transition:b.dataset.transition,display:b.dataset.display,hl:b.style.getPropertyValue('--lyr-hl'),words:ws,sheet:[...document.styleSheets].some(x=>(x.href||'').includes('lyrics-view.css')),media:window.__lyrics.media,ticks:window.__lyrics.ticks};});lyricStyle=r;if(r.line)lyricSeen.add(r.line);if(r.words.some(p=>p>0&&p<1))wordFill=true;await page.waitForTimeout(300);}
+  await until(page,async()=>true,'noop',1000).catch(()=>{});const lyricSeen=new Set();let lyricStyle=null,wordFill=false;for(let i=0;i<40&&!(lyricSeen.size===3&&wordFill);i++){const r=await layerWin().evaluate(()=>{const b=document.getElementById('lyrics'),cs=getComputedStyle(b),ws=[...b.querySelectorAll('.lyrics-line.in .lw')].map(w=>Number(w.style.getPropertyValue('--p')));return {ready:window.__lyrics.ready,line:b.querySelector('.lyrics-line.in')?.textContent||'',hidden:b.hidden,fontSize:parseFloat(cs.fontSize),color:cs.color,transition:b.dataset.transition,display:b.dataset.display,hl:b.style.getPropertyValue('--lyr-hl'),words:ws,sheet:[...document.styleSheets].some(x=>(x.href||'').includes('lyrics-view.css')),media:window.__lyrics.media,ticks:window.__lyrics.ticks};});lyricStyle=r;if(r.line)lyricSeen.add(r.line);if(r.words.some(p=>p>0&&p<1))wordFill=true;await page.waitForTimeout(300);}
   log('lyrics in the layer window',{seen:[...lyricSeen],style:lyricStyle});
   assert.ok(['第一句歌词','第二句歌词','第三句歌词'].every(t=>lyricSeen.has(t)),'the layer window cycles through the lines on its own clock: '+[...lyricSeen].join('|'));
   assert.equal(lyricStyle.ready,true,'lyrics-view.js loaded from the web root');assert.equal(lyricStyle.sheet,true,'lyrics-view.css loaded');assert.equal(lyricStyle.hidden,false);assert.ok(Math.abs(lyricStyle.fontSize-primary.height*.05)<1,'5 % of the monitor height in px: '+lyricStyle.fontSize);assert.equal(lyricStyle.color,'rgb(0, 255, 0)');assert.equal(lyricStyle.transition,'fade');assert.equal(lyricStyle.display,'karaoke');assert.equal(lyricStyle.hl,'#ff00ff');assert.ok(wordFill,'karaoke: a word was mid-fill in the layer window');assert.equal(lyricStyle.media,null,'no media session on the runner → own clock');
@@ -187,16 +207,22 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   const mascotState=JSON.parse((await call('/api/mascot/state','GET')).body);log('mascot state',mascotState);assert.equal(mascotState.ok,true);assert.equal(mascotState.mascots[0].state.rig,true);
   assert.equal(await mascotWin().evaluate(()=>document.querySelector('.m-bubble').textContent),'CI 你好','the say command reached the window');
   await hideMain(app);await page.waitForTimeout(1200);await screenshot('2e-mascot.png');await showMain(app);
+  // Native Electron can grow transparent, non-resizable windows by a pixel per setPosition
+  // call at fractional DPI. Exercise the product movement helper on EVERY connected screen.
+  await require('./mascot-bounds.cjs').verifyMascotBounds(app,{bridge,log});
   await page.evaluate(()=>{state.modules.mascot.enabled=false;update({custom:false});});
 
-  // 4. Live wallpaper: a 2 s WebM recorded in the page becomes the wallpaper; the layer window plays it clipped to the pieces.
+  // 4. Live wallpaper: a 2 s WebM becomes the wallpaper; the layer window plays it clipped to the pieces.
   // The video is the portrait's cut-out person walking over the inpainted background (the same construction as
   //     tools/verify-live.cjs), so the still keeps the person where the float points are and the per-frame segmenter has a
   //     real person to find.
-  await page.evaluate(()=>(async()=>{const img=await loadImage(source()),cut=await Cutout.separate(img,source(),state.floatPoints),bg=await loadImage(cut.backgroundUrl);const W=img.naturalWidth,H=img.naturalHeight,box={x:cut.box.x*W,y:cut.box.y*H,w:cut.box.w*W,h:cut.box.h*H};
-   const blob=await new Promise(resolve=>{const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm',videoBitsPerSecond:6e6});const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
-    let t=0;const timer=setInterval(()=>{const k=t/60*6.283;ctx.drawImage(bg,0,0,W,H);ctx.drawImage(cut.cutout,box.x+Math.sin(k)*W*.06,box.y-Math.abs(Math.sin(k*3))*H*.01,box.w,box.h);if(++t>=60){clearInterval(timer);rec.stop();}},33);rec.start();});
-   await Rider.modules.find(m=>m.id==='live').useFile(new File([blob],'ci.webm',{type:'video/webm'}),{time:0});})());
+  const personPlan=await page.evaluate(async()=>{const img=await loadImage(source()),cut=await Cutout.separate(img,source(),state.floatPoints),bg=await loadImage(cut.backgroundUrl),W=img.naturalWidth,H=img.naturalHeight;
+   const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;canvas.getContext('2d').drawImage(bg,0,0,W,H);
+   return {kind:'person',width:W,height:H,box:{x:cut.box.x*W,y:cut.box.y*H,w:cut.box.w*W,h:cut.box.h*H},background:canvas.toDataURL('image/png'),cutout:cut.cutout.toDataURL('image/png')};
+  });
+  const personFixture=await recordVideoFixture(personPlan);
+  log('video fixture recorded',{kind:'person',bytes:personFixture.bytes.length,codec:personFixture.mimeType,frames:personFixture.frames,width:personFixture.width,height:personFixture.height});
+  await page.evaluate(base64=>Rider.modules.find(m=>m.id==='live').useFile(new File([Uint8Array.from(atob(base64),c=>c.charCodeAt(0))],'ci.webm',{type:'video/webm'}),{time:0}),personFixture.bytes.toString('base64'));
   // Importing a video replaces the wallpaper and resets the floating person (as for any new picture): turn it on again,
   //     which auto-cuts the person out of the new still, then come back to the client view.
   await page.locator('[data-view="design"]').click();await page.locator('#float-toggle').check();await page.locator('#float-status').filter({hasText:'人物已抠出'}).waitFor({timeout:180000});log('person cut out of the live still');
@@ -222,6 +248,7 @@ async function until(page,fn,what,timeout=90000){const t0=Date.now();let last;wh
   assert.equal(restored.monitorId,primary.id);assert.notEqual(restored.hwnd,liveLayers[0].hwnd,'a new window after restart');assert.equal(restored.live,true);assert.equal(restored.lyrics?.lines,3,'the manual lyrics came back with the layer');
   const info2=await bridge.layerInfo(restored.hwnd);log('restored layer window',info2);
   assert.equal(info2.valid,true);assert.equal(info2.visible,true);assert.equal(info2.parentClass,restored.host==='workerw'?'WorkerW':'Progman');assert.deepEqual(rectOf(info2),rectOf(primary));
+  assertDesktopOrder(info2);
   const kept=await bridge.getWallpaper(primary.id);assert.ok(kept&&fs.existsSync(kept)&&path.basename(kept).startsWith(path.basename(current).slice(0,12)),'Windows kept our wallpaper across the restart');
   const playing2=await untilPlaying(app);log('restored layer playing',playing2);assert.ok(playing2.frames>5&&!playing2.paused,'the restored layer plays');
   await hideMain(app);await page.waitForTimeout(1500);await screenshot('4-restored.png');await showMain(app);

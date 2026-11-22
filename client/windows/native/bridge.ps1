@@ -24,6 +24,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 namespace DesktopRider {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   // Only the leading part of IDesktopWallpaper; vtable order must match the SDK (shobjidl_core.h).
   [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   public interface IDesktopWallpaper {
@@ -55,8 +56,8 @@ namespace DesktopRider {
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
-    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hWnd);
@@ -66,11 +67,26 @@ namespace DesktopRider {
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint color, byte alpha, uint flags);
+    [DllImport("user32.dll")] static extern bool GetLayeredWindowAttributes(IntPtr hWnd, out uint color, out byte alpha, out uint flags);
+    [DllImport("kernel32.dll", EntryPoint = "SetLastError")] static extern void ClearLastError(uint error);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool ScreenToClient(IntPtr hWnd, ref POINT point);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool SetProp(IntPtr hWnd, string name, IntPtr value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetProp(IntPtr hWnd, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr hWnd, string name);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
     static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
-    const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+    const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040, SWP_FRAMECHANGED = 0x0020;
+    const string OriginalStyle = "DesktopRider.OriginalStyle", SavedStyle = "DesktopRider.SavedStyle";
+    const string OriginalExtendedStyle = "DesktopRider.OriginalExtendedStyle", SavedExtendedStyle = "DesktopRider.SavedExtendedStyle";
+    static void WindowStyle(IntPtr h, IntPtr value, int index = -16) {
+      ClearLastError(0);
+      if (SetWindowLongPtr(h, index, value) == IntPtr.Zero && Marshal.GetLastWin32Error() != 0)
+        throw new Exception("SetWindowLongPtr failed: " + Marshal.GetLastWin32Error());
+    }
     // powershell.exe is system-DPI-aware by manifest, so the process context cannot be changed any
-    // more; the thread context can (Win10 1607+) and makes SetWindowPos / GetSystemMetrics physical.
+    // more; the thread context can (Win10 1607+) and keeps our geometry calls in physical pixels.
     public static void DpiAware() { try { if (SetThreadDpiAwarenessContext(new IntPtr(-4)) == IntPtr.Zero) SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch { } }
     // Physical geometry per device interface path, from the display mode itself — never DPI-virtualised.
     static Dictionary<string, int[]> Modes() {
@@ -96,12 +112,13 @@ namespace DesktopRider {
     }
     public static void SetWallpaper(string id, string path) { var w = (IDesktopWallpaper)new DesktopWallpaperClass(); w.SetPosition(4); w.SetWallpaper(id, path); } // 4 = FILL; the file already matches the monitor
     // The window that hosts the desktop wallpaper, behind the icons. Explorer spawns a WorkerW
-    // between wallpaper and icons on 0x052C; Windows 11 24H2 keeps the icon view inside Progman,
-    // where the Progman itself (bottom of its z-order) is the right parent.
+    // between wallpaper and icons on 0x052C; Windows 11 24H2 instead keeps both the icon view
+    // and the wallpaper WorkerW as children of Progman. Our window must sit BETWEEN those children.
     public static IntPtr WallpaperHost(out string mode) {
       IntPtr progman = FindWindow("Progman", null); IntPtr result;
+      // Request the raised desktop once, matching the 24H2-compatible shell handshake.
+      // Do not immediately release it again with (0xD, 0).
       SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0, 1000, out result);
-      SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), IntPtr.Zero, 0, 1000, out result);
       IntPtr workerw = IntPtr.Zero;
       EnumWindows((top, lp) => { if (FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero) workerw = FindWindowEx(IntPtr.Zero, top, "WorkerW", null); return true; }, IntPtr.Zero);
       if (workerw != IntPtr.Zero) { mode = "workerw"; return workerw; }
@@ -110,13 +127,69 @@ namespace DesktopRider {
     public static string Attach(long hwnd, int left, int top, int width, int height) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) throw new Exception("window handle is not valid");
       string mode; IntPtr host = WallpaperHost(out mode); if (host == IntPtr.Zero) throw new Exception("desktop host window not found");
-      // Verified on the CI runners: works from an elevated (high-integrity) process too, so no special hint for error 5.
-      if (SetParent(h, host) == IntPtr.Zero) { int code = Marshal.GetLastWin32Error(); throw new Exception("SetParent 失败（Win32 错误 " + code + "），桌面层窗口无法挂到资源管理器的桌面之下"); }
-      int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77); // child coordinates are relative to the virtual screen origin
-      SetWindowPos(h, HWND_BOTTOM, left - vx, top - vy, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+      IntPtr style = GetWindowLongPtr(h, -16), exStyle = GetWindowLongPtr(h, -20), previousParent = IntPtr.Zero; bool parentChanged = false;
+      bool alreadySaved = GetProp(h, SavedStyle) != IntPtr.Zero;
+      bool alreadyExtendedSaved = GetProp(h, SavedExtendedStyle) != IntPtr.Zero;
+      uint oldColor, oldFlags; byte oldAlpha;
+      bool hadAttributes = GetLayeredWindowAttributes(h, out oldColor, out oldAlpha, out oldFlags);
+      try {
+        // SetParent does not set WS_CHILD / clear WS_POPUP. Store the pre-attach style on the
+        // window itself: attach and detach run in separate PowerShell processes.
+        if (!alreadySaved) {
+          if (!SetProp(h, OriginalStyle, style) || !SetProp(h, SavedStyle, new IntPtr(1)))
+            throw new Exception("SetProp failed: " + Marshal.GetLastWin32Error());
+        }
+        if (!alreadyExtendedSaved) {
+          if (!SetProp(h, OriginalExtendedStyle, exStyle) || !SetProp(h, SavedExtendedStyle, new IntPtr(1)))
+            throw new Exception("SetProp extended style failed: " + Marshal.GetLastWin32Error());
+        }
+        WindowStyle(h, new IntPtr((style.ToInt64() & ~0x80000000L) | 0x40000000L));
+        ClearLastError(0); previousParent = SetParent(h, host);
+        int error = Marshal.GetLastWin32Error();
+        // NULL is also a valid previous parent for a top-level window.
+        if (previousParent == IntPtr.Zero && error != 0) throw new Exception("SetParent failed: " + error);
+        parentChanged = true;
+        // Chromium can paint correctly while its reparented layered HWND remains absent from
+        // the desktop composition. Initialise only our child window's global opacity; retain
+        // per-pixel transparency and all existing extended styles (including click-through).
+        long attachedExStyle = GetWindowLongPtr(h, -20).ToInt64();
+        if ((attachedExStyle & 0x80000L) == 0) WindowStyle(h, new IntPtr(attachedExStyle | 0x80000L), -20);
+        if (!SetLayeredWindowAttributes(h, 0, 255, 2))
+          throw new Exception("SetLayeredWindowAttributes failed: " + Marshal.GetLastWin32Error());
+        var point = new POINT { X = left, Y = top };
+        if (!ScreenToClient(host, ref point)) throw new Exception("ScreenToClient failed: " + Marshal.GetLastWin32Error());
+        // HWND_BOTTOM under Progman puts a visible window BEHIND the system wallpaper on
+        // 24H2+. Keep icons above our surface without moving/hiding any Explorer window.
+        IntPtr icons = mode == "progman" ? FindWindowEx(host, IntPtr.Zero, "SHELLDLL_DefView", null) : IntPtr.Zero;
+        IntPtr after = icons != IntPtr.Zero ? icons : HWND_BOTTOM;
+        if (!SetWindowPos(h, after, point.X, point.Y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED))
+          throw new Exception("SetWindowPos failed: " + Marshal.GetLastWin32Error());
+      } catch {
+        if (parentChanged) SetParent(h, previousParent);
+        try { WindowStyle(h, style); } catch { } // Preserve the attachment error if the HWND was destroyed meanwhile.
+        try { WindowStyle(h, exStyle, -20); if (hadAttributes) SetLayeredWindowAttributes(h, oldColor, oldAlpha, oldFlags); } catch { }
+        if (!alreadySaved) { RemoveProp(h, OriginalStyle); RemoveProp(h, SavedStyle); }
+        if (!alreadyExtendedSaved) { RemoveProp(h, OriginalExtendedStyle); RemoveProp(h, SavedExtendedStyle); }
+        throw;
+      }
       return mode;
     }
-    public static void Detach(long hwnd) { IntPtr h = new IntPtr(hwnd); if (IsWindow(h)) { ShowWindow(h, 0); SetParent(h, IntPtr.Zero); } }
+    public static void Detach(long hwnd) {
+      IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) return;
+      ShowWindow(h, 0); ClearLastError(0);
+      if (SetParent(h, IntPtr.Zero) == IntPtr.Zero && Marshal.GetLastWin32Error() != 0)
+        throw new Exception("SetParent detach failed: " + Marshal.GetLastWin32Error());
+      if (GetProp(h, SavedStyle) != IntPtr.Zero) {
+        // Keep it hidden while restoring the original top-level style.
+        WindowStyle(h, new IntPtr(GetProp(h, OriginalStyle).ToInt64() & ~0x10000000L));
+        RemoveProp(h, OriginalStyle); RemoveProp(h, SavedStyle);
+        SetWindowPos(h, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+      }
+      if (GetProp(h, SavedExtendedStyle) != IntPtr.Zero) {
+        WindowStyle(h, GetProp(h, OriginalExtendedStyle), -20);
+        RemoveProp(h, OriginalExtendedStyle); RemoveProp(h, SavedExtendedStyle);
+      }
+    }
     public static string GetWallpaper(string id) { var w = (IDesktopWallpaper)new DesktopWallpaperClass(); return w.GetWallpaper(id) ?? ""; }
     // Is the desktop of the monitor (L,T,W,H) hidden? True when some visible, non-minimised, non-cloaked top-level
     // window that is not the shell, not click-through (WS_EX_TRANSPARENT overlays) and not `exclude` is maximised on
@@ -137,13 +210,26 @@ namespace DesktopRider {
         return true; }, IntPtr.Zero);
       return found;
     }
-    // "parentClass|visible|left|top|right|bottom" in physical screen pixels, or "" when the handle is gone.
+    // "parentClass|visible|left|top|right|bottom|iconIndex|layerIndex|wallpaperIndex|isChild|isLayered|effectiveAlpha|alphaFlags";
+    // sibling indexes are top-to-bottom (-1 if absent), so tests can detect a layer hidden UNDER wallpaper.
     public static string LayerInfo(long hwnd) {
       IntPtr h = new IntPtr(hwnd); if (!IsWindow(h)) return "";
       // GetAncestor(GA_PARENT), not GetParent: the latter returns NULL for an overlapped window even after SetParent.
       IntPtr parent = GetAncestor(h, 1); var name = new System.Text.StringBuilder(256); if (parent != IntPtr.Zero) GetClassName(parent, name, 256);
       RECT rc; GetWindowRect(h, out rc);
-      return name + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + rc.Left + "|" + rc.Top + "|" + rc.Right + "|" + rc.Bottom;
+      int icons = -1, layer = -1, wallpaper = -1, index = 0;
+      if (name.ToString() == "Progman") {
+        var seen = new HashSet<IntPtr>();
+        for (IntPtr child = GetWindow(parent, 5); child != IntPtr.Zero && seen.Add(child); child = GetWindow(child, 2)) { // GW_CHILD, GW_HWNDNEXT
+          var cls = new System.Text.StringBuilder(256); GetClassName(child, cls, 256);
+          if (child == h) layer = index;
+          if (cls.ToString() == "SHELLDLL_DefView") icons = index;
+          if (cls.ToString() == "WorkerW" && IsWindowVisible(child) && wallpaper == -1) wallpaper = index;
+          index++;
+        }
+      }
+      uint color, flags; byte alpha; bool attributes = GetLayeredWindowAttributes(h, out color, out alpha, out flags);
+      return name + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + rc.Left + "|" + rc.Top + "|" + rc.Right + "|" + rc.Bottom + "|" + icons + "|" + layer + "|" + wallpaper + "|" + ((GetWindowLongPtr(h, -16).ToInt64() & 0x40000000L) != 0 ? 1 : 0) + "|" + ((GetWindowLongPtr(h, -20).ToInt64() & 0x80000L) != 0 ? 1 : 0) + "|" + (attributes && (flags & 2) != 0 ? (int)alpha : -1) + "|" + (attributes ? (long)flags : -1);
     }
   }
 }
@@ -237,6 +323,11 @@ switch ($Command) {
     $info=[DesktopRider.Api]::LayerInfo($Hwnd)
     if (-not $info) { ConvertTo-Json -Compress -InputObject ([ordered]@{ valid=$false }) }
     else { $p=$info.Split('|'); $l=[int]$p[2]; $t=[int]$p[3]; $r=[int]$p[4]; $b=[int]$p[5]
-      ConvertTo-Json -Compress -InputObject ([ordered]@{ valid=$true; parentClass=$p[0]; visible=($p[1] -eq '1'); left=$l; top=$t; width=($r-$l); height=($b-$t) }) }
+      $icons=[int]$p[6]; $layer=[int]$p[7]; $wallpaper=[int]$p[8]
+      $belowIcons=$null; if ($icons -ge 0) { $belowIcons=($layer -gt $icons) }
+      $aboveWallpaper=$null; if ($wallpaper -ge 0) { $aboveWallpaper=($layer -ge 0 -and $layer -lt $wallpaper) }
+      $effectiveAlpha=$null; if ([int]$p[11] -ge 0) { $effectiveAlpha=[int]$p[11] }
+      $alphaFlags=$null; if ([long]$p[12] -ge 0) { $alphaFlags=[long]$p[12] }
+      ConvertTo-Json -Compress -InputObject ([ordered]@{ valid=$true; parentClass=$p[0]; visible=($p[1] -eq '1'); left=$l; top=$t; width=($r-$l); height=($b-$t); belowIcons=$belowIcons; aboveWallpaper=$aboveWallpaper; childWindow=($p[9] -eq '1'); layeredWindow=($p[10] -eq '1'); effectiveAlpha=$effectiveAlpha; alphaFlags=$alphaFlags }) }
   }
 }
